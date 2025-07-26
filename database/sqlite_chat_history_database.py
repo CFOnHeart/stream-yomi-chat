@@ -1,45 +1,19 @@
 """
-Database interface module for chat history persistence.
-Provides abstract interface for database operations.
+SQLite implementation of chat history database.
 """
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import sqlite3
 import json
-from datetime import datetime
 import os
 
+from database.chat_history_database import ChatHistoryDatabaseInterface
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-class DatabaseInterface(ABC):
-    """Abstract interface for database operations."""
-    
-    @abstractmethod
-    def save_message(self, session_id: str, message: Dict[str, Any]) -> None:
-        """Save a message to the database."""
-        pass
-    
-    @abstractmethod
-    def get_chat_history(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get chat history for a session."""
-        pass
-    
-    @abstractmethod
-    def delete_session(self, session_id: str) -> None:
-        """Delete a session and all its messages."""
-        pass
-    
-    @abstractmethod
-    def get_total_characters(self, session_id: str) -> int:
-        """Get total character count for a session."""
-        pass
-
-
-class SQLiteDatabase(DatabaseInterface):
-    """SQLite implementation of the database interface."""
+class SQLiteChatHistoryDatabase(ChatHistoryDatabaseInterface):
+    """SQLite implementation of the chat history database interface."""
     
     def __init__(self, db_path: str = "database/chat_history.db"):
         self.db_path = db_path
@@ -137,8 +111,3 @@ class SQLiteDatabase(DatabaseInterface):
             total = result[0] if result[0] is not None else 0
         
         return total
-
-
-def get_database() -> DatabaseInterface:
-    """Factory function to get database instance."""
-    return SQLiteDatabase()

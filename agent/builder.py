@@ -16,7 +16,7 @@ from langgraph.prebuilt import ToolNode, create_react_agent
 from agent.models.loader import ModelLoader
 from agent.tools.math_tools import get_math_tools
 from agent.memory import MemoryManager
-from database.interface import get_database
+from database.chat_history_database import get_database
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

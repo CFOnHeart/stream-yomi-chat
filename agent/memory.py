@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Tuple
 from langchain.schema import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain.schema.language_model import BaseLanguageModel
 
-from database.interface import DatabaseInterface
+from database.chat_history_database import ChatHistoryDatabaseInterface
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -16,7 +16,7 @@ class MemoryManager:
     """Manages chat history and memory compression."""
     
     def __init__(self, 
-                 db: DatabaseInterface, 
+                 db: ChatHistoryDatabaseInterface, 
                  llm: BaseLanguageModel,
                  max_characters: int = 3200):
         """

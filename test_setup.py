@@ -17,7 +17,7 @@ def test_imports():
         from utils.logger import setup_logger
         print("✓ Utils module imported successfully")
         
-        from database.interface import get_database
+        from database.chat_history_database import get_database
         print("✓ Database module imported successfully")
         
         from agent.tools.math_tools import get_math_tools
@@ -38,7 +38,7 @@ def test_database():
     print("\nTesting database...")
     
     try:
-        from database.interface import get_database
+        from database.chat_history_database import get_database
         
         db = get_database()
         
