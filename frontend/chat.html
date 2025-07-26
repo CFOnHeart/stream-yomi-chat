@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yomi Chatbot - 流式聊天</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chat-container {
+            width: 90%;
+            max-width: 800px;
+            height: 80vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message.bot {
+            text-align: left;
+        }
+
+        .message-content {
+            display: inline-block;
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.bot .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e1e5e9;
+        }
+
+        .event-message {
+            background: #e3f2fd !important;
+            color: #1976d2 !important;
+            border: 1px solid #bbdefb !important;
+            font-style: italic;
+            font-size: 13px;
+        }
+
+        .tool-message {
+            background: #f3e5f5 !important;
+            color: #7b1fa2 !important;
+            border: 1px solid #ce93d8 !important;
+        }
+
+        .error-message {
+            background: #ffebee !important;
+            color: #c62828 !important;
+            border: 1px solid #ffcdd2 !important;
+        }
+
+        /* 工具确认对话框样式 */
+        .tool-confirmation-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .tool-confirmation-dialog {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .tool-confirmation-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .tool-confirmation-header h3 {
+            margin: 0;
+            color: #333;
+            margin-left: 8px;
+        }
+
+        .tool-details {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .tool-param {
+            margin: 8px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+            border-left: 4px solid #667eea;
+        }
+
+        .tool-param label {
+            font-weight: bold;
+            color: #555;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .tool-param input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .confidence-indicator {
+            display: flex;
+            align-items: center;
+            margin: 12px 0;
+        }
+
+        .confidence-bar {
+            flex: 1;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            margin: 0 12px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #ffa500, #4ecdc4);
+            transition: width 0.3s ease;
+        }
+
+        .confirmation-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .confirm-button, .cancel-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .confirm-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .confirm-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .cancel-button {
+            background: #6c757d;
+            color: white;
+        }
+
+        .cancel-button:hover {
+            background: #5a6268;
+            transform: translateY(-1px);
+        }
+
+        .chat-input-container {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e1e5e9;
+        }
+
+        .chat-input-form {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .send-button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+
+        .send-button:hover {
+            transform: translateY(-2px);
+        }
+
+        .send-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-indicator {
+            padding: 10px 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            background: #f8f9fa;
+            border-top: 1px solid #e1e5e9;
+        }
+
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 3px;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            🤖 Yomi Chatbot - AI助手
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot">
+                <div class="message-content">
+                    👋 你好！我是Yomi AI助手，可以帮您回答问题、查找文档、使用工具等。请输入您的问题！
+                </div>
+            </div>
+        </div>
+        
+        <div class="status-indicator" id="statusIndicator">
+            准备就绪
+        </div>
+        
+        <div class="chat-input-container">
+            <form class="chat-input-form" id="chatForm">
+                <input 
+                    type="text" 
+                    class="chat-input" 
+                    id="chatInput" 
+                    placeholder="输入您的问题..."
+                    autocomplete="off"
+                >
+                <button type="submit" class="send-button" id="sendButton">
+                    发送
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        class YomiChatClient {
+            constructor() {
+                this.chatMessages = document.getElementById('chatMessages');
+                this.chatForm = document.getElementById('chatForm');
+                this.chatInput = document.getElementById('chatInput');
+                this.sendButton = document.getElementById('sendButton');
+                this.statusIndicator = document.getElementById('statusIndicator');
+                
+                this.sessionId = this.generateSessionId();
+                this.isProcessing = false;
+                
+                this.initEventListeners();
+            }
+            
+            generateSessionId() {
+                return 'session_' + Math.random().toString(36).substr(2, 9);
+            }
+            
+            initEventListeners() {
+                this.chatForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.sendMessage();
+                });
+                
+                this.chatInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+            }
+            
+            async sendMessage() {
+                const message = this.chatInput.value.trim();
+                if (!message || this.isProcessing) return;
+                
+                // 添加用户消息到界面
+                this.addMessage(message, 'user');
+                this.chatInput.value = '';
+                
+                // 设置处理状态
+                this.setProcessing(true);
+                
+                try {
+                    await this.streamChat(message);
+                } catch (error) {
+                    console.error('Chat error:', error);
+                    this.addMessage('抱歉，发生了网络错误。请稍后重试。', 'bot', 'error-message');
+                } finally {
+                    this.setProcessing(false);
+                }
+            }
+            
+            async streamChat(message) {
+                const response = await fetch('http://localhost:8000/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        session_id: this.sessionId
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                let currentBotMessage = null;
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            
+                            if (data === '[DONE]') {
+                                return;
+                            }
+                            
+                            try {
+                                const event = JSON.parse(data);
+                                currentBotMessage = this.handleStreamEvent(event, currentBotMessage);
+                            } catch (e) {
+                                console.error('Failed to parse event:', e, data);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            handleStreamEvent(event, currentBotMessage) {
+                console.log('收到流式事件:', event); // 添加调试日志
+                
+                switch (event.event_type) {
+                    case 'session_start':
+                        this.updateStatus('会话开始...');
+                        break;
+                        
+                    case 'tool_detected':
+                        this.addMessage(
+                            `🔧 检测到工具: ${event.data.tool_name} (置信度: ${(event.data.confidence * 100).toFixed(0)}%)`,
+                            'bot',
+                            'tool-message'
+                        );
+                        this.updateStatus('检测到相关工具...');
+                        break;
+                        
+                    case 'tool_confirmation_needed':
+                        this.showToolConfirmationDialog(event.data);
+                        this.updateStatus('等待工具确认...');
+                        break;
+                        
+                    case 'tool_confirmation_timeout':
+                        this.addMessage(
+                            `⏰ ${event.data.message}`,
+                            'bot',
+                            'error-message'
+                        );
+                        break;
+                        
+                    case 'tool_confirmation_cancelled':
+                        this.addMessage(
+                            `❌ ${event.data.message}`,
+                            'bot',
+                            'event-message'
+                        );
+                        break;
+                        
+                    case 'tool_execution_start':
+                        this.addMessage(
+                            `⚙️ 正在执行工具: ${event.data.tool_name}`,
+                            'bot',
+                            'event-message'
+                        );
+                        this.updateStatus('正在执行工具...');
+                        break;
+                        
+                    case 'tool_execution_complete':
+                        const status = event.data.success ? '成功' : '失败';
+                        const emoji = event.data.success ? '✅' : '❌';
+                        this.addMessage(
+                            `${emoji} 工具执行${status}: ${event.data.tool_name}`,
+                            'bot',
+                            event.data.success ? 'event-message' : 'error-message'
+                        );
+                        break;
+                        
+                    case 'llm_response_start':
+                        this.updateStatus('AI正在思考...');
+                        this.showTypingIndicator();
+                        break;
+                        
+                    case 'llm_response_chunk':
+                        // 处理流式响应片段（如果需要逐字显示）
+                        break;
+                        
+                    case 'llm_response_complete':
+                        this.hideTypingIndicator();
+                        this.updateStatus('响应完成');
+                        // 显示LLM的响应
+                        if (currentBotMessage) {
+                            currentBotMessage.textContent = event.data.response;
+                        } else {
+                            currentBotMessage = this.addMessage(event.data.response, 'bot').querySelector('.message-content');
+                        }
+                        break;
+                        
+                    case 'session_complete':
+                        this.hideTypingIndicator();
+                        this.updateStatus('准备就绪');
+                        // 如果没有通过其他事件显示响应，使用最终结果
+                        if (!currentBotMessage && event.data.final_result) {
+                            this.addMessage(event.data.final_result, 'bot');
+                        }
+                        break;
+                        
+                    case 'error':
+                        this.addMessage(
+                            `❌ 错误: ${event.data.message}`,
+                            'bot',
+                            'error-message'
+                        );
+                        this.updateStatus('发生错误');
+                        break;
+                }
+                
+                return currentBotMessage;
+            }
+            
+            addMessage(content, sender, extraClass = '') {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${sender}`;
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = `message-content ${extraClass}`;
+                contentDiv.textContent = content;
+                
+                messageDiv.appendChild(contentDiv);
+                this.chatMessages.appendChild(messageDiv);
+                
+                // 滚动到底部
+                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+                
+                return messageDiv;
+            }
+            
+            setProcessing(processing) {
+                this.isProcessing = processing;
+                this.sendButton.disabled = processing;
+                this.chatInput.disabled = processing;
+                
+                if (processing) {
+                    this.sendButton.textContent = '处理中...';
+                } else {
+                    this.sendButton.textContent = '发送';
+                }
+            }
+            
+            updateStatus(status) {
+                this.statusIndicator.textContent = status;
+            }
+            
+            showTypingIndicator() {
+                const typingDiv = document.createElement('div');
+                typingDiv.className = 'message bot';
+                typingDiv.id = 'typingIndicator';
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content typing-indicator';
+                
+                contentDiv.innerHTML = `
+                    <span>AI正在输入</span>
+                    <div class="typing-dots">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                `;
+                
+                typingDiv.appendChild(contentDiv);
+                this.chatMessages.appendChild(typingDiv);
+                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            }
+            
+            hideTypingIndicator() {
+                const typingIndicator = document.getElementById('typingIndicator');
+                if (typingIndicator) {
+                    typingIndicator.remove();
+                }
+            }
+            
+            showToolConfirmationDialog(toolData) {
+                // 创建模态对话框
+                const modal = document.createElement('div');
+                modal.className = 'tool-confirmation-modal';
+                modal.id = 'toolConfirmationModal';
+                
+                const dialog = document.createElement('div');
+                dialog.className = 'tool-confirmation-dialog';
+                
+                // 对话框内容
+                dialog.innerHTML = `
+                    <div class="tool-confirmation-header">
+                        <span style="font-size: 24px;">🔧</span>
+                        <h3>工具执行确认</h3>
+                    </div>
+                    
+                    <p><strong>检测到工具:</strong> ${toolData.tool_name}</p>
+                    <p>${toolData.message}</p>
+                    
+                    <div class="confidence-indicator">
+                        <span>置信度:</span>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${(toolData.confidence * 100)}%"></div>
+                        </div>
+                        <span>${(toolData.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                    
+                    <div class="tool-details">
+                        <h4>工具描述:</h4>
+                        <p>${toolData.tool_schema.description || '执行特定任务的工具'}</p>
+                        
+                        <h4>参数:</h4>
+                        <div id="toolParameters"></div>
+                    </div>
+                    
+                    <div class="confirmation-buttons">
+                        <button class="cancel-button" onclick="window.yomiChat.confirmTool(false)">
+                            取消
+                        </button>
+                        <button class="confirm-button" onclick="window.yomiChat.confirmTool(true)">
+                            确认执行
+                        </button>
+                    </div>
+                `;
+                
+                modal.appendChild(dialog);
+                document.body.appendChild(modal);
+                
+                // 生成参数输入框
+                this.generateParameterInputs(toolData.tool_schema, toolData.suggested_args);
+                
+                // 存储工具数据供确认时使用
+                this.pendingToolData = toolData;
+                
+                // 点击模态背景关闭对话框
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        this.confirmTool(false);
+                    }
+                });
+            }
+            
+            generateParameterInputs(toolSchema, suggestedArgs) {
+                const container = document.getElementById('toolParameters');
+                if (!container) return;
+                
+                const properties = toolSchema.parameters?.properties || {};
+                
+                if (Object.keys(properties).length === 0) {
+                    container.innerHTML = '<p style="color: #666; font-style: italic;">此工具无需参数</p>';
+                    return;
+                }
+                
+                for (const [paramName, paramSchema] of Object.entries(properties)) {
+                    const paramDiv = document.createElement('div');
+                    paramDiv.className = 'tool-param';
+                    
+                    const label = document.createElement('label');
+                    label.textContent = `${paramName}${paramSchema.description ? ` - ${paramSchema.description}` : ''}`;
+                    
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.name = paramName;
+                    input.value = suggestedArgs[paramName] || '';
+                    input.placeholder = paramSchema.default || '';
+                    
+                    if (paramSchema.type === 'number') {
+                        input.type = 'number';
+                    }
+                    
+                    paramDiv.appendChild(label);
+                    paramDiv.appendChild(input);
+                    container.appendChild(paramDiv);
+                }
+            }
+            
+            async confirmTool(confirmed) {
+                try {
+                    let toolArgs = {};
+                    
+                    if (confirmed) {
+                        // 收集用户输入的参数
+                        const inputs = document.querySelectorAll('#toolParameters input');
+                        inputs.forEach(input => {
+                            if (input.value.trim()) {
+                                toolArgs[input.name] = input.value.trim();
+                            }
+                        });
+                    }
+                    
+                    // 发送确认结果到后端
+                    const response = await fetch('http://localhost:8000/chat/tool-confirm', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            session_id: this.sessionId,
+                            confirmed: confirmed,
+                            tool_args: toolArgs
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    console.log('工具确认结果:', result);
+                    
+                    // 关闭对话框
+                    this.closeToolConfirmationDialog();
+                    
+                    // 更新状态
+                    if (confirmed) {
+                        this.updateStatus('工具执行已确认，正在处理...');
+                    } else {
+                        this.updateStatus('工具执行已取消');
+                    }
+                    
+                } catch (error) {
+                    console.error('工具确认失败:', error);
+                    this.addMessage('工具确认失败，请重试', 'bot', 'error-message');
+                    this.closeToolConfirmationDialog();
+                }
+            }
+            
+            closeToolConfirmationDialog() {
+                const modal = document.getElementById('toolConfirmationModal');
+                if (modal) {
+                    modal.remove();
+                }
+                this.pendingToolData = null;
+            }
+        }
+        
+        // 初始化聊天客户端
+        document.addEventListener('DOMContentLoaded', () => {
+            const chatClient = new YomiChatClient();
+            // 将实例设为全局变量，供对话框调用
+            window.yomiChat = chatClient;
+        });
+    </script>
+</body>
+</html>

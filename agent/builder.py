@@ -190,79 +190,56 @@ class ConversationAgent:
             # Convert messages to the format expected by the graph
             message_input = {"messages": messages}
             
-            # Process through the graph
-            result = self.graph.invoke(message_input)
+            logger.info(f"Starting graph stream processing with {len(messages)} messages")
             
-            # Extract the final messages from the result
-            if isinstance(result, dict) and "messages" in result:
-                final_messages = result["messages"]
-            else:
-                final_messages = result if isinstance(result, list) else [result]
+            # Use async streaming method
+            current_response = ""
+            tool_calls_made = []
             
-            # Get the last AI message
-            last_ai_message = None
-            tool_calls_info = []
-            
-            for msg in reversed(final_messages):
-                if hasattr(msg, 'content') and msg.content:
-                    # Check if this is an AI message
-                    if hasattr(msg, 'type') and msg.type == 'ai':
-                        last_ai_message = msg
-                        break
-                    elif hasattr(msg, '__class__') and 'AI' in msg.__class__.__name__:
-                        last_ai_message = msg
-                        break
-                    elif not hasattr(msg, 'type'):  # Assume AI message if no type
-                        last_ai_message = msg
-                        break
-            
-            # Look for tool calls in the conversation
-            for msg in final_messages:
-                if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                    for tool_call in msg.tool_calls:
-                        tool_calls_info.append({
-                            "name": tool_call.get("name", ""),
-                            "args": tool_call.get("args", {}),
-                            "id": tool_call.get("id", "")
-                        })
-                        yield {
-                            "type": "tool_call",
-                            "name": tool_call.get("name", ""),
-                            "args": tool_call.get("args", {}),
-                            "id": tool_call.get("id", "")
-                        }
+            async for chunk in self.graph.astream(message_input):
+                logger.debug(f"Received graph chunk: {type(chunk)}")
                 
-                # Look for tool results
-                if hasattr(msg, 'content') and hasattr(msg, 'type'):
-                    if msg.type == 'tool':
-                        yield {
-                            "type": "tool_result",
-                            "tool_name": getattr(msg, 'name', 'unknown'),
-                            "result": str(msg.content)
-                        }
-            
-            # Stream the final AI response content
-            if last_ai_message and hasattr(last_ai_message, 'content'):
-                content = last_ai_message.content
+                # Handle different chunk types from LangGraph
+                if isinstance(chunk, dict):
+                    # Check for messages in the chunk
+                    if "messages" in chunk:
+                        messages_chunk = chunk["messages"]
+                        if isinstance(messages_chunk, list):
+                            for msg in messages_chunk:
+                                await self._process_message_chunk(msg, tool_calls_made, current_response)
+                        else:
+                            await self._process_message_chunk(messages_chunk, tool_calls_made, current_response)
+                    
+                    # Check for agent output
+                    elif "agent" in chunk:
+                        agent_output = chunk["agent"]
+                        if isinstance(agent_output, dict) and "messages" in agent_output:
+                            for msg in agent_output["messages"]:
+                                async for stream_chunk in self._process_message_for_streaming(msg):
+                                    if stream_chunk["type"] == "message":
+                                        current_response += stream_chunk["content"]
+                                    yield stream_chunk
+                    
+                    # Check for tool output
+                    elif "tools" in chunk:
+                        tool_output = chunk["tools"]
+                        if isinstance(tool_output, dict) and "messages" in tool_output:
+                            for msg in tool_output["messages"]:
+                                if hasattr(msg, 'content'):
+                                    yield {
+                                        "type": "tool_result",
+                                        "tool_name": getattr(msg, 'name', 'unknown'),
+                                        "result": str(msg.content)
+                                    }
                 
-                # Simulate character-by-character streaming
-                for i, char in enumerate(content):
-                    yield {
-                        "type": "message",
-                        "content": char,
-                        "is_complete": i == len(content) - 1
-                    }
-                    await asyncio.sleep(0.01)  # Small delay for streaming effect
-            else:
-                # Fallback response
-                fallback_msg = "I processed your request, but couldn't generate a proper response."
-                for i, char in enumerate(fallback_msg):
-                    yield {
-                        "type": "message",
-                        "content": char,
-                        "is_complete": i == len(fallback_msg) - 1
-                    }
-                    await asyncio.sleep(0.01)
+                # Handle direct message objects
+                elif hasattr(chunk, 'content'):
+                    async for stream_chunk in self._process_message_for_streaming(chunk):
+                        if stream_chunk["type"] == "message":
+                            current_response += stream_chunk["content"]
+                        yield stream_chunk
+                        
+            logger.info(f"Graph streaming completed. Total response length: {len(current_response)}")
             
         except Exception as e:
             logger.error(f"Error in graph streaming: {e}")
@@ -274,6 +251,57 @@ class ConversationAgent:
                     "is_complete": i == len(error_msg) - 1
                 }
                 await asyncio.sleep(0.01)
+    
+    async def _process_message_for_streaming(self, message) -> AsyncGenerator[Dict[str, Any], None]:
+        """Process a single message and yield streaming chunks."""
+        try:
+            # Handle tool calls
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                for tool_call in message.tool_calls:
+                    yield {
+                        "type": "tool_call",
+                        "name": tool_call.get("name", ""),
+                        "args": tool_call.get("args", {}),
+                        "id": tool_call.get("id", "")
+                    }
+            
+            # Handle message content
+            if hasattr(message, 'content') and message.content:
+                content = str(message.content)
+                
+                # Check if this is an AI message by class name or type
+                is_ai_message = (
+                    (hasattr(message, 'type') and message.type == 'ai') or
+                    (hasattr(message, '__class__') and 'AI' in message.__class__.__name__) or
+                    (not hasattr(message, 'type'))  # Default to AI if no type specified
+                )
+                
+                if is_ai_message:
+                    # Stream character by character for AI messages
+                    for i, char in enumerate(content):
+                        yield {
+                            "type": "message",
+                            "content": char,
+                            "is_complete": i == len(content) - 1
+                        }
+                        await asyncio.sleep(0.01)  # Small delay for streaming effect
+                
+        except Exception as e:
+            logger.error(f"Error processing message chunk: {e}")
+    
+    async def _process_message_chunk(self, message, tool_calls_made, current_response):
+        """Process message chunk and update tracking variables."""
+        # This is a helper method for tracking, not streaming
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            for tool_call in message.tool_calls:
+                tool_calls_made.append({
+                    "name": tool_call.get("name", ""),
+                    "args": tool_call.get("args", {}),
+                    "id": tool_call.get("id", "")
+                })
+        
+        if hasattr(message, 'content') and message.content:
+            current_response += str(message.content)
     
     def get_session_info(self, session_id: str) -> Dict[str, Any]:
         """Get information about a session."""

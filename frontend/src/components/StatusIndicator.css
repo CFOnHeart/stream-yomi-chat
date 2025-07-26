@@ -1,0 +1,8 @@
+.status-indicator {
+  padding: 10px 20px;
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+  background: #f8f9fa;
+  border-top: 1px solid #e1e5e9;
+}
