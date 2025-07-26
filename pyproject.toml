@@ -1,0 +1,31 @@
+[project]
+name = "longchainagent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "azure-identity>=1.23.0",
+    "faiss-cpu>=1.7.4",
+    "fastapi>=0.104.1",
+    "google-api-python-client>=2.175.0",
+    "graphviz>=0.21",
+    "ipython>=9.4.0",
+    "jinja2>=3.1.6",
+    "langchain-community>=0.3.27",
+    "langchain-tavily>=0.2.6",
+    "langchain[openai]>=0.3.26",
+    "langgraph>=0.5.1",
+    "memoization>=0.4.0",
+    "nltk>=3.9.1",
+    "numpy>=1.24.0",
+    "pydantic>=2.11.7",
+    "pydots>=1.1.17017",
+    "pypdf>=5.8.0",
+    "pytest>=8.4.1",
+    "python-dotenv>=1.1.1",
+    "reportlab>=4.4.2",
+    "ruamel-yaml>=0.18.14",
+    "sqlalchemy>=2.0.41",
+    "uvicorn>=0.24.0",
+]

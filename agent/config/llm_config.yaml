@@ -1,0 +1,15 @@
+llm:
+  provider: openai  # azure, openai, google
+  model: gpt-4.1
+  api_key: todo
+  endpoint: https://api.openai.com/v1
+  api_version: "2024-02-15-preview"
+  temperature: 0.7
+  max_tokens: 2000
+
+embedding:
+  provider: openai  # azure, openai, google
+  model: text-embedding-ada-002
+  api_key: todo
+  endpoint: https://api.openai.com/v1
+  api_version: "2024-02-15-preview"

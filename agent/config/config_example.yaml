@@ -1,0 +1,11 @@
+llm:
+  provider: openai  # Change to azure, openai, or google as needed
+  model: gpt-4o-mini  # Affordable model for testing
+  api_key: YOUR_OPENAI_API_KEY_HERE  # Replace with your actual API key
+  temperature: 0.7
+  max_tokens: 2000
+
+embedding:
+  provider: openai
+  model: text-embedding-ada-002
+  api_key: YOUR_OPENAI_API_KEY_HERE  # Replace with your actual API key
