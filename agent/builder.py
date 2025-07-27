@@ -219,17 +219,24 @@ class ConversationAgent:
                         call_name = tool_call.get('name', '')
                         
                         if call_id and call_name:  # 完整的工具调用
+                            # 获取工具的详细信息
+                            tool_info = self._get_tool_info(call_name)
+                            
                             pending_tool_calls[0] = {
                                 'name': call_name,
                                 'args_str': '',
-                                'id': call_id
+                                'id': call_id,
+                                'description': tool_info.get('description', ''),
+                                'args_schema': tool_info.get('args_schema', {})
                             }
                             
                             yield {
                                 "type": "tool_call",
                                 "name": call_name,
                                 "args": {},  # 先发送空参数，后续会更新
-                                "id": call_id
+                                "id": call_id,
+                                "description": tool_info.get('description', ''),
+                                "args_schema": tool_info.get('args_schema', {})
                             }
                 
                 # Handle tool call chunks (分片参数构建)
@@ -261,7 +268,10 @@ class ConversationAgent:
                             yield {
                                 "type": "tool_result",
                                 "tool_name": tool_data['name'],
-                                "result": str(tool_result)
+                                "result": str(tool_result),
+                                "args": args_dict,
+                                "description": tool_data.get('description', ''),
+                                "args_schema": tool_data.get('args_schema', {})
                             }
                             
                         except Exception as tool_error:
@@ -269,7 +279,10 @@ class ConversationAgent:
                             yield {
                                 "type": "tool_result",
                                 "tool_name": tool_data['name'],
-                                "result": f"Error: {str(tool_error)}"
+                                "result": f"Error: {str(tool_error)}",
+                                "args": {},
+                                "description": tool_data.get('description', ''),
+                                "args_schema": tool_data.get('args_schema', {})
                             }
                     
                     # 清空pending工具调用
@@ -340,6 +353,44 @@ class ConversationAgent:
                     return f"Tool execution failed: {str(e)}"
         
         return f"Tool {tool_name} not found"
+
+    def _get_tool_info(self, tool_name: str) -> Dict[str, Any]:
+        """Get detailed information about a tool."""
+        for tool in self.tools:
+            if tool.name == tool_name:
+                tool_info = {
+                    'name': tool.name,
+                    'description': tool.description,
+                    'args_schema': {}
+                }
+                
+                # 获取参数 schema
+                if hasattr(tool, 'args_schema') and tool.args_schema:
+                    schema = tool.args_schema
+                    if hasattr(schema, 'model_fields'):
+                        # Pydantic v2
+                        tool_info['args_schema'] = {
+                            field_name: {
+                                'type': str(field_info.annotation),
+                                'description': field_info.description or '',
+                                'required': field_info.is_required()
+                            }
+                            for field_name, field_info in schema.model_fields.items()
+                        }
+                    elif hasattr(schema, '__fields__'):
+                        # Pydantic v1
+                        tool_info['args_schema'] = {
+                            field_name: {
+                                'type': str(field_info.type_),
+                                'description': field_info.field_info.description or '',
+                                'required': field_info.required
+                            }
+                            for field_name, field_info in schema.__fields__.items()
+                        }
+                
+                return tool_info
+        
+        return {'name': tool_name, 'description': '', 'args_schema': {}}
 
     async def _process_message_for_streaming(self, message) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a single message and yield streaming chunks."""

@@ -73,12 +73,38 @@ export const useChatClient = () => {
         break;
 
       case 'tool_call':
-        addMessage(`🔧 调用工具: ${event.name}`, 'bot', 'tool');
+        // 创建工具调用的详细显示信息
+        let toolCallMessage = `🔧 调用工具: ${event.name}`;
+        
+        if (event.description) {
+          toolCallMessage += `\n📝 描述: ${event.description}`;
+        }
+        
+        if (event.args_schema && Object.keys(event.args_schema).length > 0) {
+          toolCallMessage += `\n⚙️ 参数定义:`;
+          Object.entries(event.args_schema).forEach(([param, schema]) => {
+            const type = schema.type || '未知';
+            const description = schema.description || '无描述';
+            toolCallMessage += `\n  • ${param} (${type}): ${description}`;
+          });
+        }
+        
+        addMessage(toolCallMessage, 'bot', 'tool');
         updateStatus('正在执行工具...');
         break;
 
       case 'tool_result':
-        addMessage(`✅ 工具结果: ${event.result}`, 'bot', 'event');
+        // 创建工具结果的详细显示信息
+        let toolResultMessage = `✅ 工具执行结果: ${event.result}`;
+        
+        if (event.args && Object.keys(event.args).length > 0) {
+          toolResultMessage += `\n📥 实际参数:`;
+          Object.entries(event.args).forEach(([param, value]) => {
+            toolResultMessage += `\n  • ${param}: ${value}`;
+          });
+        }
+        
+        addMessage(toolResultMessage, 'bot', 'event');
         break;
 
       case 'complete':
