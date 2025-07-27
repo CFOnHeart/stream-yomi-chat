@@ -189,19 +189,20 @@ class ConversationAgent:
         try:
             logger.info(f"Starting direct LLM streaming with {len(messages)} messages")
             
-            # Check if the last message has tool calls that need processing
-            last_message = messages[-1] if messages else None
-            
             # For now, bypass LangGraph and stream directly from LLM
             # This ensures we get real streaming instead of post-processing
             current_response = ""
             content_buffer = ""  # 缓冲区，累积内容再发送
             
+            # 工具调用状态跟踪
+            pending_tool_calls = {}  # {index: {'name': str, 'args_str': str, 'id': str}}
+            completed_tool_calls = []
+            
             # Stream directly from the LLM
             async for chunk in self.llm_with_tools.astream(messages):
                 logger.debug(f"Received LLM chunk: {type(chunk)}")
                 
-                # Handle tool calls first
+                # Handle tool calls (分片和完整的)
                 if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
                     # 发送缓冲区中的内容
                     if content_buffer.strip():
@@ -213,28 +214,66 @@ class ConversationAgent:
                         content_buffer = ""
                     
                     for tool_call in chunk.tool_calls:
-                        yield {
-                            "type": "tool_call",
-                            "name": tool_call.get("name", ""),
-                            "args": tool_call.get("args", {}),
-                            "id": tool_call.get("id", "")
-                        }
+                        # 这是完整的工具调用（第一个chunk）
+                        call_id = tool_call.get('id')
+                        call_name = tool_call.get('name', '')
                         
-                        # Execute the tool
+                        if call_id and call_name:  # 完整的工具调用
+                            pending_tool_calls[0] = {
+                                'name': call_name,
+                                'args_str': '',
+                                'id': call_id
+                            }
+                            
+                            yield {
+                                "type": "tool_call",
+                                "name": call_name,
+                                "args": {},  # 先发送空参数，后续会更新
+                                "id": call_id
+                            }
+                
+                # Handle tool call chunks (分片参数构建)
+                if hasattr(chunk, 'tool_call_chunks') and chunk.tool_call_chunks:
+                    for tool_chunk in chunk.tool_call_chunks:
+                        index = tool_chunk.get('index', 0)
+                        args_part = tool_chunk.get('args', '')
+                        
+                        if index in pending_tool_calls and args_part:
+                            pending_tool_calls[index]['args_str'] += args_part
+                
+                # 检查是否有工具调用需要执行（当参数构建完成时）
+                if hasattr(chunk, 'response_metadata') and chunk.response_metadata.get('finish_reason') == 'tool_calls':
+                    # 工具调用完成，执行所有pending的工具
+                    for index, tool_data in pending_tool_calls.items():
                         try:
-                            tool_result = await self._execute_tool(tool_call)
+                            # 解析完整的参数
+                            import json
+                            args_dict = json.loads(tool_data['args_str']) if tool_data['args_str'] else {}
+                            
+                            # 执行工具
+                            call_data = {
+                                'name': tool_data['name'],
+                                'args': args_dict,
+                                'id': tool_data['id']
+                            }
+                            
+                            tool_result = await self._execute_tool(call_data)
                             yield {
                                 "type": "tool_result",
-                                "tool_name": tool_call.get("name", ""),
+                                "tool_name": tool_data['name'],
                                 "result": str(tool_result)
                             }
+                            
                         except Exception as tool_error:
                             logger.error(f"Tool execution error: {tool_error}")
                             yield {
                                 "type": "tool_result",
-                                "tool_name": tool_call.get("name", ""),
+                                "tool_name": tool_data['name'],
                                 "result": f"Error: {str(tool_error)}"
                             }
+                    
+                    # 清空pending工具调用
+                    pending_tool_calls.clear()
                 
                 # Handle content streaming
                 if hasattr(chunk, 'content') and chunk.content:
@@ -284,6 +323,9 @@ class ConversationAgent:
         tool_name = tool_call.get("name", "")
         tool_args = tool_call.get("args", {})
         
+        logger.info(f"Executing tool: {tool_name} with args: {tool_args}")
+        logger.info(f"Tool call structure: {tool_call}")
+        
         # Find the tool by name
         for tool in self.tools:
             if tool.name == tool_name:
@@ -293,6 +335,8 @@ class ConversationAgent:
                     return str(result)
                 except Exception as e:
                     logger.error(f"Tool {tool_name} execution failed: {e}")
+                    logger.error(f"Failed args: {tool_args}")
+                    logger.error(f"Tool signature: {tool.args_schema}")
                     return f"Tool execution failed: {str(e)}"
         
         return f"Tool {tool_name} not found"
