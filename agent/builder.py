@@ -185,73 +185,118 @@ class ConversationAgent:
             }
     
     async def _stream_graph_response(self, messages: List[BaseMessage]) -> AsyncGenerator[Dict[str, Any], None]:
-        """Stream response from the LangGraph."""
+        """Stream response from the LangGraph with real LLM streaming."""
         try:
-            # Convert messages to the format expected by the graph
-            message_input = {"messages": messages}
+            logger.info(f"Starting direct LLM streaming with {len(messages)} messages")
             
-            logger.info(f"Starting graph stream processing with {len(messages)} messages")
+            # Check if the last message has tool calls that need processing
+            last_message = messages[-1] if messages else None
             
-            # Use async streaming method
+            # For now, bypass LangGraph and stream directly from LLM
+            # This ensures we get real streaming instead of post-processing
             current_response = ""
-            tool_calls_made = []
+            content_buffer = ""  # 缓冲区，累积内容再发送
             
-            async for chunk in self.graph.astream(message_input):
-                logger.debug(f"Received graph chunk: {type(chunk)}")
+            # Stream directly from the LLM
+            async for chunk in self.llm_with_tools.astream(messages):
+                logger.debug(f"Received LLM chunk: {type(chunk)}")
                 
-                # Handle different chunk types from LangGraph
-                if isinstance(chunk, dict):
-                    # Check for messages in the chunk
-                    if "messages" in chunk:
-                        messages_chunk = chunk["messages"]
-                        if isinstance(messages_chunk, list):
-                            for msg in messages_chunk:
-                                await self._process_message_chunk(msg, tool_calls_made, current_response)
-                        else:
-                            await self._process_message_chunk(messages_chunk, tool_calls_made, current_response)
+                # Handle tool calls first
+                if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
+                    # 发送缓冲区中的内容
+                    if content_buffer.strip():
+                        yield {
+                            "type": "message",
+                            "content": content_buffer,
+                            "is_complete": False
+                        }
+                        content_buffer = ""
                     
-                    # Check for agent output
-                    elif "agent" in chunk:
-                        agent_output = chunk["agent"]
-                        if isinstance(agent_output, dict) and "messages" in agent_output:
-                            for msg in agent_output["messages"]:
-                                async for stream_chunk in self._process_message_for_streaming(msg):
-                                    if stream_chunk["type"] == "message":
-                                        current_response += stream_chunk["content"]
-                                    yield stream_chunk
-                    
-                    # Check for tool output
-                    elif "tools" in chunk:
-                        tool_output = chunk["tools"]
-                        if isinstance(tool_output, dict) and "messages" in tool_output:
-                            for msg in tool_output["messages"]:
-                                if hasattr(msg, 'content'):
-                                    yield {
-                                        "type": "tool_result",
-                                        "tool_name": getattr(msg, 'name', 'unknown'),
-                                        "result": str(msg.content)
-                                    }
-                
-                # Handle direct message objects
-                elif hasattr(chunk, 'content'):
-                    async for stream_chunk in self._process_message_for_streaming(chunk):
-                        if stream_chunk["type"] == "message":
-                            current_response += stream_chunk["content"]
-                        yield stream_chunk
+                    for tool_call in chunk.tool_calls:
+                        yield {
+                            "type": "tool_call",
+                            "name": tool_call.get("name", ""),
+                            "args": tool_call.get("args", {}),
+                            "id": tool_call.get("id", "")
+                        }
                         
-            logger.info(f"Graph streaming completed. Total response length: {len(current_response)}")
+                        # Execute the tool
+                        try:
+                            tool_result = await self._execute_tool(tool_call)
+                            yield {
+                                "type": "tool_result",
+                                "tool_name": tool_call.get("name", ""),
+                                "result": str(tool_result)
+                            }
+                        except Exception as tool_error:
+                            logger.error(f"Tool execution error: {tool_error}")
+                            yield {
+                                "type": "tool_result",
+                                "tool_name": tool_call.get("name", ""),
+                                "result": f"Error: {str(tool_error)}"
+                            }
+                
+                # Handle content streaming
+                if hasattr(chunk, 'content') and chunk.content:
+                    content = str(chunk.content)
+                    current_response += content
+                    content_buffer += content
+                    
+                    # 当缓冲区积累了足够的内容时才发送 (减少chunk数量)
+                    if len(content_buffer) >= 3 or content_buffer.endswith(('.', '!', '?', '\n', '。', '！', '？')):
+                        if content_buffer.strip():  # 确保有实际内容
+                            yield {
+                                "type": "message",
+                                "content": content_buffer,
+                                "is_complete": False
+                            }
+                            content_buffer = ""
             
-        except Exception as e:
-            logger.error(f"Error in graph streaming: {e}")
-            error_msg = f"Sorry, I encountered an error: {str(e)}"
-            for i, char in enumerate(error_msg):
+            # 发送剩余的缓冲内容
+            if content_buffer.strip():
                 yield {
                     "type": "message",
-                    "content": char,
-                    "is_complete": i == len(error_msg) - 1
+                    "content": content_buffer,
+                    "is_complete": False
                 }
-                await asyncio.sleep(0.01)
+            
+            # Mark the final chunk as complete
+            if current_response:
+                yield {
+                    "type": "message",
+                    "content": "",
+                    "is_complete": True
+                }
+                        
+            logger.info(f"LLM streaming completed. Total response length: {len(current_response)}")
+            
+        except Exception as e:
+            logger.error(f"Error in LLM streaming: {e}")
+            error_msg = f"Sorry, I encountered an error: {str(e)}"
+            yield {
+                "type": "message",
+                "content": error_msg,
+                "is_complete": True
+            }
     
+    async def _execute_tool(self, tool_call: Dict[str, Any]) -> str:
+        """Execute a single tool call."""
+        tool_name = tool_call.get("name", "")
+        tool_args = tool_call.get("args", {})
+        
+        # Find the tool by name
+        for tool in self.tools:
+            if tool.name == tool_name:
+                try:
+                    # Execute the tool with the provided arguments
+                    result = await tool.ainvoke(tool_args) if hasattr(tool, 'ainvoke') else tool.invoke(tool_args)
+                    return str(result)
+                except Exception as e:
+                    logger.error(f"Tool {tool_name} execution failed: {e}")
+                    return f"Tool execution failed: {str(e)}"
+        
+        return f"Tool {tool_name} not found"
+
     async def _process_message_for_streaming(self, message) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a single message and yield streaming chunks."""
         try:

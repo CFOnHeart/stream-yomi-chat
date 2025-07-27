@@ -108,51 +108,71 @@ export const useChatClient = () => {
   }, [addMessage, updateStatus, setIsTyping, setMessages]);
 
   const streamChat = useCallback(async (message) => {
-    const response = await fetch('/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: message,
-        session_id: sessionId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    let currentBotMessage = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-
-          if (data === '[DONE]' || data.trim() === '') {
-            continue;
-          }
-
-          try {
-            const event = JSON.parse(data);
-            currentBotMessage = handleStreamEvent(event, currentBotMessage);
-          } catch (e) {
-            console.error('Failed to parse event:', e, data);
-          }
+    return new Promise((resolve, reject) => {
+      // 使用 EventSource 进行真正的 SSE 连接
+      const url = new URL('/chat/stream', window.location.origin);
+      
+      // 创建 POST 请求来启动流式响应
+      fetch('/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          session_id: sessionId
+        })
+      }).then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      }
-    }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let currentBotMessage = null;
+        let buffer = '';
+
+        const processStream = () => {
+          return reader.read().then(({ done, value }) => {
+            if (done) {
+              resolve();
+              return;
+            }
+
+            // 将新数据添加到缓冲区
+            buffer += decoder.decode(value, { stream: true });
+            
+            // 按行分割数据
+            const lines = buffer.split('\n');
+            // 保留最后一个不完整的行
+            buffer = lines.pop() || '';
+
+            // 处理每一行
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim();
+
+                if (data === '[DONE]' || data === '') {
+                  continue;
+                }
+
+                try {
+                  const event = JSON.parse(data);
+                  currentBotMessage = handleStreamEvent(event, currentBotMessage);
+                } catch (e) {
+                  console.error('Failed to parse event:', e, data);
+                }
+              }
+            }
+
+            // 继续读取下一个块
+            return processStream();
+          });
+        };
+
+        return processStream();
+      }).catch(reject);
+    });
   }, [sessionId, handleStreamEvent]);
 
   const sendMessage = useCallback(async (message) => {
