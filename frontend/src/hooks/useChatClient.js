@@ -73,38 +73,30 @@ export const useChatClient = () => {
         break;
 
       case 'tool_call':
-        // 创建工具调用的详细显示信息
-        let toolCallMessage = `🔧 调用工具: ${event.name}`;
+        // 发送结构化的工具调用信息
+        const toolCallData = {
+          toolName: event.name,
+          description: event.description || '',
+          argsSchema: event.args_schema || {},
+          type: 'tool_call'
+        };
         
-        if (event.description) {
-          toolCallMessage += `\n📝 描述: ${event.description}`;
-        }
-        
-        if (event.args_schema && Object.keys(event.args_schema).length > 0) {
-          toolCallMessage += `\n⚙️ 参数定义:`;
-          Object.entries(event.args_schema).forEach(([param, schema]) => {
-            const type = schema.type || '未知';
-            const description = schema.description || '无描述';
-            toolCallMessage += `\n  • ${param} (${type}): ${description}`;
-          });
-        }
-        
-        addMessage(toolCallMessage, 'bot', 'tool');
+        addMessage(toolCallData, 'bot', 'tool');
         updateStatus('正在执行工具...');
         break;
 
       case 'tool_result':
-        // 创建工具结果的详细显示信息
-        let toolResultMessage = `✅ 工具执行结果: ${event.result}`;
+        // 发送结构化的工具结果信息
+        const toolResultData = {
+          toolName: event.tool_name,
+          result: event.result,
+          args: event.args || {},
+          description: event.description || '',
+          argsSchema: event.args_schema || {},
+          type: 'tool_result'
+        };
         
-        if (event.args && Object.keys(event.args).length > 0) {
-          toolResultMessage += `\n📥 实际参数:`;
-          Object.entries(event.args).forEach(([param, value]) => {
-            toolResultMessage += `\n  • ${param}: ${value}`;
-          });
-        }
-        
-        addMessage(toolResultMessage, 'bot', 'event');
+        addMessage(toolResultData, 'bot', 'event');
         break;
 
       case 'complete':

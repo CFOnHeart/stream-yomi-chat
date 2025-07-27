@@ -1,0 +1,191 @@
+.tool-message-container,
+.tool-result-container {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  user-select: none;
+}
+
+.tool-header:hover {
+  background-color: rgba(0, 123, 255, 0.05);
+}
+
+.tool-icon {
+  font-size: 16px;
+  margin-right: 8px;
+}
+
+.tool-name {
+  flex: 1;
+  font-weight: 500;
+  color: #495057;
+}
+
+.expand-arrow {
+  font-size: 12px;
+  color: #6c757d;
+  transition: transform 0.2s ease;
+}
+
+.expand-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.tool-details {
+  border-top: 1px solid #dee2e6;
+  background-color: #ffffff;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.tool-section:last-child {
+  border-bottom: none;
+}
+
+.tool-section-title {
+  font-weight: 600;
+  color: #343a40;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.tool-section-content {
+  color: #6c757d;
+  line-height: 1.5;
+  padding: 8px 12px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
+}
+
+.tool-params {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-param {
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  padding: 12px;
+  border-left: 3px solid #28a745;
+}
+
+.param-name {
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.param-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.param-type {
+  background-color: #e9ecef;
+  color: #495057;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+}
+
+.param-required {
+  background-color: #dc3545;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.param-description {
+  color: #6c757d;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.param-value {
+  background-color: #e3f2fd;
+  color: #1976d2;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  margin-top: 4px;
+  border: 1px solid #bbdefb;
+}
+
+.tool-message-legacy {
+  padding: 12px 16px;
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+  color: #856404;
+  margin: 8px 0;
+}
+
+/* 区分工具调用和工具结果的样式 */
+.tool-message-container {
+  border-left: 4px solid #007bff;
+}
+
+.tool-result-container {
+  border-left: 4px solid #28a745;
+}
+
+.tool-result-container .tool-header {
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .tool-header {
+    padding: 10px 12px;
+  }
+  
+  .tool-section {
+    padding: 10px 12px;
+  }
+  
+  .tool-param {
+    padding: 10px;
+  }
+  
+  .param-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
