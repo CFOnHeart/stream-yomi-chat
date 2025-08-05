@@ -19,6 +19,13 @@ const ChatContainer = () => {
     closeToolConfirmation
   } = useChatClient();
 
+  // 调试：监控工具确认状态
+  React.useEffect(() => {
+    if (toolConfirmation) {
+      console.log('ChatContainer: 工具确认数据更新:', toolConfirmation);
+    }
+  }, [toolConfirmation]);
+
   return (
     <div className="chat-container">
       <ChatHeader />
@@ -36,11 +43,29 @@ const ChatContainer = () => {
       />
       
       {toolConfirmation && (
-        <ToolConfirmationModal
-          toolData={toolConfirmation}
-          onConfirm={confirmTool}
-          onClose={closeToolConfirmation}
-        />
+        <>
+          {console.log('渲染工具确认模态框:', toolConfirmation)}
+          <ToolConfirmationModal
+            toolData={toolConfirmation}
+            onConfirm={confirmTool}
+            onClose={closeToolConfirmation}
+          />
+        </>
+      )}
+      
+      {/* 调试信息 */}
+      {toolConfirmation && (
+        <div style={{
+          position: 'fixed',
+          top: '10px',
+          right: '10px',
+          background: 'red',
+          color: 'white',
+          padding: '10px',
+          zIndex: 9999
+        }}>
+          工具确认对话框应该显示！
+        </div>
       )}
     </div>
   );

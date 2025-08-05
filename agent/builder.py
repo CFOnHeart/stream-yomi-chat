@@ -16,6 +16,7 @@ from langgraph.prebuilt import ToolNode, create_react_agent
 from agent.models.loader import ModelLoader
 from agent.tools.math_tools import get_math_tools
 from agent.memory import MemoryManager
+from agent.confirmation.manager import ToolConfirmationManager
 from database.chat_history_database import get_database
 from utils.logger import get_logger
 
@@ -42,6 +43,9 @@ class ConversationAgent:
         self.db = get_database()
         self.memory = MemoryManager(self.db, self.llm)
         
+        # Initialize tool confirmation manager
+        self.confirmation_manager = ToolConfirmationManager(default_timeout=15)
+        
         # Bind tools to LLM
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
@@ -49,6 +53,9 @@ class ConversationAgent:
         self.graph = self._build_graph()
         
         logger.info("Conversation agent initialized successfully")
+        logger.info(f"Loaded {len(self.tools)} tools: {[tool.name for tool in self.tools]}")
+        logger.info(f"LLM with tools type: {type(self.llm_with_tools)}")
+        logger.info(f"LLM tools bound: {hasattr(self.llm_with_tools, 'kwargs') and 'tools' in getattr(self.llm_with_tools, 'kwargs', {})}")
     
     def _build_graph(self):
         """Build the LangGraph conversation graph using create_react_agent."""
@@ -125,8 +132,12 @@ class ConversationAgent:
             # Get chat history
             history, was_compressed = self.memory.get_chat_history(session_id)
             
-            # Add current message
-            current_messages = history + [HumanMessage(content=message)]
+            # Add current message with session_id in additional_kwargs
+            current_message = HumanMessage(
+                content=message, 
+                additional_kwargs={"session_id": session_id}
+            )
+            current_messages = history + [current_message]
             
             # Yield session info
             yield {
@@ -147,6 +158,13 @@ class ConversationAgent:
                     tool_calls_made.append(chunk)
                     yield chunk
                 elif chunk["type"] == "tool_result":
+                    yield chunk
+                elif chunk["type"] == "tool_detected":
+                    # Forward tool detection events to frontend
+                    yield chunk
+                elif chunk["type"] in ["tool_confirmation_required", "tool_confirmation_timeout", 
+                                       "tool_confirmation_rejected", "tool_execution_start", "tool_error"]:
+                    # Forward all tool confirmation related events
                     yield chunk
             
             # Save AI response to memory
@@ -185,25 +203,44 @@ class ConversationAgent:
             }
     
     async def _stream_graph_response(self, messages: List[BaseMessage]) -> AsyncGenerator[Dict[str, Any], None]:
-        """Stream response from the LangGraph with real LLM streaming."""
+        """Stream response from the LangGraph with tool confirmation support."""
         try:
-            logger.info(f"Starting direct LLM streaming with {len(messages)} messages")
+            logger.info(f"Starting LLM streaming with tool confirmation for {len(messages)} messages")
+            logger.info(f"Available tools: {[tool.name for tool in self.tools]}")
+            logger.info(f"LLM with tools type: {type(self.llm_with_tools)}")
             
-            # For now, bypass LangGraph and stream directly from LLM
-            # This ensures we get real streaming instead of post-processing
+            # 强制打印调试信息
+            print(f"[DEBUG] Starting LLM streaming with {len(messages)} messages")
+            print(f"[DEBUG] Available tools: {[tool.name for tool in self.tools]}")
+            
+            # 测试工具绑定
+            if hasattr(self.llm_with_tools, 'bound'):
+                logger.info(f"LLM bound tools: {getattr(self.llm_with_tools, 'bound', 'None')}")
+            
             current_response = ""
-            content_buffer = ""  # 缓冲区，累积内容再发送
+            content_buffer = ""
+            chunks_received = 0
             
             # 工具调用状态跟踪
-            pending_tool_calls = {}  # {index: {'name': str, 'args_str': str, 'id': str}}
-            completed_tool_calls = []
+            pending_tool_calls = {}
+            tool_calls_detected = False
             
             # Stream directly from the LLM
             async for chunk in self.llm_with_tools.astream(messages):
-                logger.debug(f"Received LLM chunk: {type(chunk)}")
+                chunks_received += 1
+                print(f"[DEBUG] Chunk #{chunks_received}: {type(chunk)}")
                 
-                # Handle tool calls (分片和完整的)
+                logger.debug(f"Chunk #{chunks_received}: {type(chunk)} - {chunk}")
+                
+                # 检查chunk的所有属性
+                chunk_attrs = [attr for attr in dir(chunk) if not attr.startswith('_')]
+                logger.debug(f"Chunk attributes: {chunk_attrs}")
+                
+                # Handle tool calls first
                 if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
+                    print(f"[DEBUG] TOOL CALLS DETECTED in chunk #{chunks_received}: {chunk.tool_calls}")
+                    logger.info(f"Tool calls detected in chunk #{chunks_received}: {chunk.tool_calls}")
+                    tool_calls_detected = True
                     # 发送缓冲区中的内容
                     if content_buffer.strip():
                         yield {
@@ -214,12 +251,10 @@ class ConversationAgent:
                         content_buffer = ""
                     
                     for tool_call in chunk.tool_calls:
-                        # 这是完整的工具调用（第一个chunk）
                         call_id = tool_call.get('id')
                         call_name = tool_call.get('name', '')
                         
-                        if call_id and call_name:  # 完整的工具调用
-                            # 获取工具的详细信息
+                        if call_id and call_name:
                             tool_info = self._get_tool_info(call_name)
                             
                             pending_tool_calls[0] = {
@@ -230,16 +265,19 @@ class ConversationAgent:
                                 'args_schema': tool_info.get('args_schema', {})
                             }
                             
+                            print(f"[DEBUG] Added tool call to pending: {pending_tool_calls[0]}")
+                            
                             yield {
-                                "type": "tool_call",
+                                "type": "tool_detected",
                                 "name": call_name,
-                                "args": {},  # 先发送空参数，后续会更新
+                                "args": {},
                                 "id": call_id,
                                 "description": tool_info.get('description', ''),
                                 "args_schema": tool_info.get('args_schema', {})
                             }
+                            print(f"[DEBUG] Just yielded tool_detected event for {call_name}")
                 
-                # Handle tool call chunks (分片参数构建)
+                # Handle tool call chunks (参数构建)
                 if hasattr(chunk, 'tool_call_chunks') and chunk.tool_call_chunks:
                     for tool_chunk in chunk.tool_call_chunks:
                         index = tool_chunk.get('index', 0)
@@ -248,60 +286,111 @@ class ConversationAgent:
                         if index in pending_tool_calls and args_part:
                             pending_tool_calls[index]['args_str'] += args_part
                 
-                # 检查是否有工具调用需要执行（当参数构建完成时）
-                if hasattr(chunk, 'response_metadata') and chunk.response_metadata.get('finish_reason') == 'tool_calls':
-                    # 工具调用完成，执行所有pending的工具
-                    for index, tool_data in pending_tool_calls.items():
-                        try:
-                            # 解析完整的参数
-                            import json
-                            args_dict = json.loads(tool_data['args_str']) if tool_data['args_str'] else {}
-                            
-                            # 执行工具
-                            call_data = {
-                                'name': tool_data['name'],
-                                'args': args_dict,
-                                'id': tool_data['id']
-                            }
-                            
-                            tool_result = await self._execute_tool(call_data)
-                            yield {
-                                "type": "tool_result",
-                                "tool_name": tool_data['name'],
-                                "result": str(tool_result),
-                                "args": args_dict,
-                                "description": tool_data.get('description', ''),
-                                "args_schema": tool_data.get('args_schema', {})
-                            }
-                            
-                        except Exception as tool_error:
-                            logger.error(f"Tool execution error: {tool_error}")
-                            yield {
-                                "type": "tool_result",
-                                "tool_name": tool_data['name'],
-                                "result": f"Error: {str(tool_error)}",
-                                "args": {},
-                                "description": tool_data.get('description', ''),
-                                "args_schema": tool_data.get('args_schema', {})
-                            }
-                    
-                    # 清空pending工具调用
-                    pending_tool_calls.clear()
-                
-                # Handle content streaming - 降低缓冲阈值，更频繁地发送
+                # Handle content streaming (常规消息内容)
                 if hasattr(chunk, 'content') and chunk.content:
                     content = str(chunk.content)
                     current_response += content
                     content_buffer += content
+                    print(f"[DEBUG] Content chunk: '{content}'")
+                    logger.debug(f"Content chunk: '{content}'")
                     
-                    # 降低缓冲阈值：只要有内容就发送，不等待大量积累
-                    if content_buffer.strip():  # 只要有非空白内容就发送
+                    # 立即发送内容
+                    if content_buffer.strip():
                         yield {
                             "type": "message",
                             "content": content_buffer,
                             "is_complete": False
                         }
                         content_buffer = ""
+            
+            # 处理完成后的工具调用确认流程
+            print(f"[DEBUG] After streaming: tool_calls_detected={tool_calls_detected}, pending_tool_calls={pending_tool_calls}")
+            if pending_tool_calls and tool_calls_detected:
+                print(f"[DEBUG] Processing {len(pending_tool_calls)} tool calls for confirmation")
+                logger.info(f"Processing {len(pending_tool_calls)} tool calls for confirmation")
+                for index, tool_data in pending_tool_calls.items():
+                    try:
+                        # 解析完整的参数
+                        import json
+                        args_dict = json.loads(tool_data['args_str']) if tool_data['args_str'] else {}
+                        logger.info(f"Tool call parsed: {tool_data['name']} with args: {args_dict}")
+                        
+                        # 获取session_id
+                        session_id = None
+                        for msg in messages:
+                            if hasattr(msg, 'additional_kwargs') and 'session_id' in msg.additional_kwargs:
+                                session_id = msg.additional_kwargs['session_id']
+                                break
+                        if not session_id:
+                            session_id = 'default'
+                        
+                        logger.info(f"Sending tool confirmation request for session: {session_id}")
+                        # 发送工具确认请求事件
+                        confirmation_event = {
+                            "type": "tool_confirmation_required",
+                            "tool_name": tool_data['name'],
+                            "args": args_dict,
+                            "description": tool_data['description'],
+                            "args_schema": tool_data['args_schema'],
+                            "session_id": session_id
+                        }
+                        logger.info(f"Yielding confirmation event: {confirmation_event}")
+                        yield confirmation_event
+                        
+                        # 等待用户确认
+                        confirmed, updated_args, error_msg = await self.confirmation_manager.request_confirmation(
+                            session_id=session_id,
+                            tool_name=tool_data['name'],
+                            tool_args=args_dict,
+                            tool_description=tool_data['description'],
+                            tool_schema=tool_data['args_schema']
+                        )
+                        
+                        if error_msg:
+                            yield {
+                                "type": "tool_confirmation_timeout", 
+                                "message": error_msg
+                            }
+                            continue
+                        
+                        if not confirmed:
+                            yield {
+                                "type": "tool_confirmation_rejected",
+                                "message": f"用户取消了工具 {tool_data['name']} 的执行"
+                            }
+                            continue
+                        
+                        # 执行工具
+                        call_data = {
+                            'name': tool_data['name'],
+                            'args': updated_args,
+                            'id': tool_data['id']
+                        }
+                        
+                        yield {
+                            "type": "tool_execution_start",
+                            "tool_name": tool_data['name'],
+                            "args": updated_args
+                        }
+                        
+                        tool_result = await self._execute_tool(call_data)
+                        
+                        yield {
+                            "type": "tool_result",
+                            "tool_name": tool_data['name'],
+                            "result": str(tool_result),
+                            "args": updated_args,
+                            "description": tool_data.get('description', ''),
+                            "args_schema": tool_data.get('args_schema', {})
+                        }
+                        
+                    except Exception as tool_error:
+                        logger.error(f"Tool confirmation/execution error: {tool_error}")
+                        yield {
+                            "type": "tool_error",
+                            "tool_name": tool_data['name'],
+                            "error": str(tool_error)
+                        }
             
             # 发送剩余的缓冲内容
             if content_buffer.strip():
@@ -311,10 +400,10 @@ class ConversationAgent:
                     "is_complete": False
                 }
             
-            # Mark the final chunk as complete
-            if current_response:
+            # 如果有任何响应内容，标记完成
+            if current_response or not tool_calls_detected:
                 yield {
-                    "type": "message",
+                    "type": "message", 
                     "content": "",
                     "is_complete": True
                 }
@@ -449,3 +538,40 @@ class ConversationAgent:
     def clear_session(self, session_id: str) -> None:
         """Clear a session."""
         self.memory.clear_session(session_id)
+    
+    def confirm_tool_execution(self, session_id: str, confirmed: bool, updated_args: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Confirm or reject a tool execution request.
+        
+        Args:
+            session_id: Session identifier
+            confirmed: Whether the tool execution is confirmed
+            updated_args: Updated arguments for the tool (if confirmed)
+            
+        Returns:
+            True if confirmation was processed successfully
+        """
+        return self.confirmation_manager.confirm_tool(session_id, confirmed, updated_args)
+    
+    def get_pending_tool_confirmation(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get pending tool confirmation request for a session.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            Pending request data or None
+        """
+        request = self.confirmation_manager.get_pending_request(session_id)
+        if request:
+            return {
+                "id": request.id,
+                "tool_name": request.tool_name,
+                "tool_args": request.tool_args,
+                "tool_description": request.tool_description,
+                "tool_schema": request.tool_schema,
+                "timestamp": request.timestamp,
+                "timeout_seconds": request.timeout_seconds
+            }
+        return None

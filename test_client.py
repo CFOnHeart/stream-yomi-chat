@@ -98,6 +98,9 @@ def test_chat_stream():
                             print(chunk.get("content", ""), end="", flush=True)
                         elif chunk.get("type") == "tool_call":
                             print(f"\n🔧 Tool: {chunk.get('name')} with args {chunk.get('args')}")
+                        elif chunk.get("type") == "tool_detected":
+                            print(f"\n🚨 Tool Detected: {chunk.get('name')} - {chunk.get('description')}")
+                            print(f"   Args schema: {chunk.get('args_schema')}")
                         elif chunk.get("type") == "tool_result":
                             print(f"🔧 Result: {chunk.get('result')}")
                         elif chunk.get("type") == "complete":

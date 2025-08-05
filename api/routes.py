@@ -35,7 +35,9 @@ app.add_middleware(
 
 # Initialize the conversation agent
 config_path = Path("agent/config/llm_config.yaml")
+logger.info(f"Initializing agent with config: {config_path}")
 agent = ConversationAgent(str(config_path))
+logger.info("Agent initialized successfully in API routes")
 
 
 class ChatRequest(BaseModel):
@@ -43,6 +45,13 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     stream: bool = True
+
+
+class ToolConfirmationRequest(BaseModel):
+    """Request model for tool confirmation endpoint."""
+    session_id: str
+    confirmed: bool
+    tool_args: Optional[Dict[str, Any]] = None
 
 
 class ChatResponse(BaseModel):
@@ -62,6 +71,7 @@ async def root():
         "endpoints": {
             "chat_stream": "/chat/stream",
             "chat": "/chat",
+            "tool_confirm": "/chat/tool-confirm",
             "session_info": "/session/{session_id}",
             "clear_session": "/session/{session_id}/clear"
         }
@@ -155,6 +165,42 @@ async def chat_complete(request: ChatRequest):
     
     except Exception as e:
         logger.error(f"Chat completion error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/tool-confirm")
+async def confirm_tool(request: ToolConfirmationRequest):
+    """
+    Confirm or reject a tool execution request.
+    
+    This endpoint is used by the frontend to send user confirmation
+    for tool execution requests.
+    """
+    logger.info(f"Received tool confirmation: session={request.session_id}, confirmed={request.confirmed}")
+    
+    try:
+        # Process the confirmation
+        success = agent.confirm_tool_execution(
+            session_id=request.session_id,
+            confirmed=request.confirmed,
+            updated_args=request.tool_args
+        )
+        
+        if success:
+            return {
+                "status": "success",
+                "message": "Tool confirmation processed successfully",
+                "confirmed": request.confirmed,
+                "session_id": request.session_id
+            }
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail="No pending tool confirmation found for this session"
+            )
+    
+    except Exception as e:
+        logger.error(f"Tool confirmation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

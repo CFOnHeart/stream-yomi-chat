@@ -6,7 +6,7 @@ import sys
 from typing import Optional
 
 
-def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
+def setup_logger(name: str, level: str = "DEBUG") -> logging.Logger:
     """
     Setup logger with consistent formatting.
     

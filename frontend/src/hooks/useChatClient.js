@@ -72,17 +72,49 @@ export const useChatClient = () => {
         }
         break;
 
-      case 'tool_call':
-        // 发送结构化的工具调用信息
-        const toolCallData = {
+      case 'tool_detected':
+        // 发送结构化的工具检测信息
+        const toolDetectedData = {
           toolName: event.name,
           description: event.description || '',
           argsSchema: event.args_schema || {},
-          type: 'tool_call'
+          type: 'tool_detected'
         };
         
-        addMessage(toolCallData, 'bot', 'tool');
+        addMessage(toolDetectedData, 'bot', 'tool');
+        updateStatus('检测到工具...');
+        break;
+
+      case 'tool_confirmation_required':
+        console.log('收到工具确认请求:', event);
+        // 显示工具确认对话框
+        setToolConfirmation({
+          name: event.tool_name,
+          args: event.args || {},
+          description: event.description || '',
+          args_schema: event.args_schema || {},
+          session_id: event.session_id
+        });
+        updateStatus('等待用户确认...');
+        console.log('工具确认对话框应该显示了');
+        break;
+
+      case 'tool_confirmation_timeout':
+        addMessage(`⏰ ${event.message}`, 'bot', 'error');
+        updateStatus('工具确认超时');
+        setToolConfirmation(null);
+        break;
+
+      case 'tool_confirmation_rejected':
+        addMessage(`❌ ${event.message}`, 'bot', 'error');
+        updateStatus('工具执行已取消');
+        setToolConfirmation(null);
+        break;
+
+      case 'tool_execution_start':
+        addMessage(`⚙️ 正在执行工具: ${event.tool_name}`, 'bot', 'event');
         updateStatus('正在执行工具...');
+        setToolConfirmation(null);
         break;
 
       case 'tool_result':
@@ -97,6 +129,12 @@ export const useChatClient = () => {
         };
         
         addMessage(toolResultData, 'bot', 'event');
+        break;
+
+      case 'tool_error':
+        addMessage(`❌ 工具执行错误: ${event.error}`, 'bot', 'error');
+        updateStatus('工具执行失败');
+        setToolConfirmation(null);
         break;
 
       case 'complete':
