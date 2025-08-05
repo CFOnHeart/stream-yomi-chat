@@ -288,21 +288,20 @@ class ConversationAgent:
                     # 清空pending工具调用
                     pending_tool_calls.clear()
                 
-                # Handle content streaming
+                # Handle content streaming - 降低缓冲阈值，更频繁地发送
                 if hasattr(chunk, 'content') and chunk.content:
                     content = str(chunk.content)
                     current_response += content
                     content_buffer += content
                     
-                    # 当缓冲区积累了足够的内容时才发送 (减少chunk数量)
-                    if len(content_buffer) >= 3 or content_buffer.endswith(('.', '!', '?', '\n', '。', '！', '？')):
-                        if content_buffer.strip():  # 确保有实际内容
-                            yield {
-                                "type": "message",
-                                "content": content_buffer,
-                                "is_complete": False
-                            }
-                            content_buffer = ""
+                    # 降低缓冲阈值：只要有内容就发送，不等待大量积累
+                    if content_buffer.strip():  # 只要有非空白内容就发送
+                        yield {
+                            "type": "message",
+                            "content": content_buffer,
+                            "is_complete": False
+                        }
+                        content_buffer = ""
             
             # 发送剩余的缓冲内容
             if content_buffer.strip():

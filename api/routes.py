@@ -88,6 +88,9 @@ async def chat_stream(request: ChatRequest):
                 # Format as SSE
                 data = json.dumps(chunk, ensure_ascii=False)
                 yield f"data: {data}\n\n"
+                
+                # 强制刷新缓冲区，确保数据立即发送
+                await asyncio.sleep(0)  # 让出控制权，确保数据发送
         
         except Exception as e:
             logger.error(f"Streaming error: {e}")
@@ -105,12 +108,16 @@ async def chat_stream(request: ChatRequest):
         generate_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
             "Connection": "keep-alive",
             "Content-Type": "text/event-stream; charset=utf-8",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "*",
-            "X-Accel-Buffering": "no"  # 禁用 nginx 缓冲
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "X-Accel-Buffering": "no",  # 禁用 nginx 缓冲
+            "Transfer-Encoding": "chunked",  # 确保分块传输
+            "Pragma": "no-cache",
+            "Expires": "0"
         }
     )
 

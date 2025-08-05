@@ -127,18 +127,18 @@ export const useChatClient = () => {
 
   const streamChat = useCallback(async (message) => {
     return new Promise((resolve, reject) => {
-      // 使用 EventSource 进行真正的 SSE 连接
-      const url = new URL('/chat/stream', window.location.origin);
-      
       // 创建 POST 请求来启动流式响应
-      fetch('/chat/stream', {
+      fetch('http://localhost:8000/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache'
         },
         body: JSON.stringify({
           message: message,
-          session_id: sessionId
+          session_id: sessionId,
+          stream: true
         })
       }).then(response => {
         if (!response.ok) {
@@ -157,18 +157,24 @@ export const useChatClient = () => {
               return;
             }
 
-            // 将新数据添加到缓冲区
+            // 将新数据添加到缓冲区，设置stream为true以避免等待换行符
             buffer += decoder.decode(value, { stream: true });
             
-            // 按行分割数据
+            // 按行分割数据，但也处理部分数据
             const lines = buffer.split('\n');
-            // 保留最后一个不完整的行
-            buffer = lines.pop() || '';
+            
+            // 如果最后一行不完整（没有换行符结尾），保留它
+            if (!buffer.endsWith('\n')) {
+              buffer = lines.pop() || '';
+            } else {
+              buffer = '';
+            }
 
             // 处理每一行
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6).trim();
+              const trimmedLine = line.trim();
+              if (trimmedLine.startsWith('data: ')) {
+                const data = trimmedLine.slice(6).trim();
 
                 if (data === '[DONE]' || data === '') {
                   continue;
@@ -178,13 +184,16 @@ export const useChatClient = () => {
                   const event = JSON.parse(data);
                   currentBotMessage = handleStreamEvent(event, currentBotMessage);
                 } catch (e) {
-                  console.error('Failed to parse event:', e, data);
+                  console.error('Failed to parse event:', e, 'Data:', data);
                 }
               }
             }
 
             // 继续读取下一个块
             return processStream();
+          }).catch(error => {
+            console.error('Stream processing error:', error);
+            reject(error);
           });
         };
 
@@ -212,7 +221,7 @@ export const useChatClient = () => {
 
   const confirmTool = useCallback(async (confirmed, toolArgs = {}) => {
     try {
-      const response = await fetch('/chat/tool-confirm', {
+      const response = await fetch('http://localhost:8000/chat/tool-confirm', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
