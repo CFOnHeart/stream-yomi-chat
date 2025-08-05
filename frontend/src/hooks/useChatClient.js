@@ -156,7 +156,7 @@ export const useChatClient = () => {
         break;
         
       default:
-        console.log('未知事件类型:', event.type);
+        console.log('未知事件类型:', event.type, '事件内容:', event);
         break;
     }
 

@@ -15,53 +15,6 @@ const ToolMessage = ({ content, type }) => {
     return cleanType;
   };
 
-  const renderToolCall = () => {
-    const { toolName, description, argsSchema } = content;
-    
-    return (
-      <div className="tool-message-container">
-        <div className="tool-header" onClick={toggleExpanded}>
-          <span className="tool-icon">🔧</span>
-          <span className="tool-name">调用工具: {toolName}</span>
-          <span className={`expand-arrow`}>
-            查看详情 &gt;&gt;
-          </span>
-        </div>
-        
-        {isExpanded && (
-          <div className="tool-details">
-            {description && (
-              <div className="tool-section">
-                <div className="tool-section-title">📝 工具描述</div>
-                <div className="tool-section-content">{description}</div>
-              </div>
-            )}
-            
-            {argsSchema && Object.keys(argsSchema).length > 0 && (
-              <div className="tool-section">
-                <div className="tool-section-title">⚙️ 参数定义</div>
-                <div className="tool-params">
-                  {Object.entries(argsSchema).map(([param, schema]) => (
-                    <div key={param} className="tool-param">
-                      <div className="param-name">{param}</div>
-                      <div className="param-info">
-                        <span className="param-type">类型: {formatParameterType(schema.type)}</span>
-                        {schema.required && <span className="param-required">必需</span>}
-                      </div>
-                      {schema.description && (
-                        <div className="param-description">{schema.description}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   const renderToolResult = () => {
     const { toolName, result, args, description, argsSchema } = content;
     
@@ -108,12 +61,63 @@ const ToolMessage = ({ content, type }) => {
     );
   };
 
-  if (typeof content === 'object' && content.type === 'tool_call') {
-    return renderToolCall();
+  const renderToolDetected = () => {
+    const { toolName, description, argsSchema } = content;
+    
+    return (
+      <div className="tool-message-container">
+        <div className="tool-header" onClick={toggleExpanded}>
+          <span className="tool-icon">🔍</span>
+          <span className="tool-name">检测到工具: {toolName}</span>
+          <span className={`expand-arrow`}>
+            查看详情 &gt;&gt;
+          </span>
+        </div>
+        
+        {isExpanded && (
+          <div className="tool-details">
+            {description && (
+              <div className="tool-section">
+                <div className="tool-section-title">📝 工具描述</div>
+                <div className="tool-section-content">{description}</div>
+              </div>
+            )}
+            
+            {argsSchema && Object.keys(argsSchema).length > 0 && (
+              <div className="tool-section">
+                <div className="tool-section-title">⚙️ 参数定义</div>
+                <div className="tool-params">
+                  {Object.entries(argsSchema).map(([param, schema]) => (
+                    <div key={param} className="tool-param">
+                      <div className="param-name">{param}</div>
+                      <div className="param-info">
+                        <span className="param-type">类型: {formatParameterType(schema.type)}</span>
+                        {schema.required && <span className="param-required">必需</span>}
+                      </div>
+                      {schema.description && (
+                        <div className="param-description">{schema.description}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (typeof content === 'object' && content.type === 'tool_detected') {
+    return renderToolDetected();
   } else if (typeof content === 'object' && content.type === 'tool_result') {
     return renderToolResult();
   } else {
     // 兼容旧的字符串格式
+    console.log('ToolMessage 收到非标准格式的内容:', content, '类型:', typeof content);
+    if (typeof content === 'object') {
+      console.log('对象内容详情:', JSON.stringify(content, null, 2));
+    }
     return <div className="tool-message-legacy">{String(content)}</div>;
   }
 };
