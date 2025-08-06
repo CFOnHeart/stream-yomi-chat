@@ -1,6 +1,7 @@
 import React from 'react';
 import './Message.css';
 import ToolMessage from './ToolMessage';
+import MarkdownRenderer from './MarkdownRenderer';
 
 const Message = ({ content, sender, type = 'normal' }) => {
   const getMessageClass = () => {
@@ -32,10 +33,35 @@ const Message = ({ content, sender, type = 'normal' }) => {
     );
   }
 
+  // 检查是否应该渲染为 Markdown
+  const shouldRenderMarkdown = (content) => {
+    if (typeof content !== 'string') return false;
+    
+    // 检查是否包含 Markdown 标记
+    const markdownPatterns = [
+      /^#{1,6}\s+/m,           // 标题
+      /\*\*.*?\*\*/,           // 粗体
+      /\*.*?\*/,               // 斜体
+      /`.*?`/,                 // 行内代码
+      /```[\s\S]*?```/,        // 代码块
+      /^\s*[-*+]\s+/m,         // 无序列表
+      /^\s*\d+\.\s+/m,         // 有序列表
+      /^\s*>\s+/m,             // 引用
+      /\[.*?\]\(.*?\)/,        // 链接
+      /!\[.*?\]\(.*?\)/        // 图片
+    ];
+    
+    return markdownPatterns.some(pattern => pattern.test(content));
+  };
+
   return (
     <div className={`message ${sender}`}>
       <div className={getMessageClass()}>
-        {content}
+        {shouldRenderMarkdown(content) && sender === 'bot' ? (
+          <MarkdownRenderer content={content} />
+        ) : (
+          content
+        )}
       </div>
     </div>
   );

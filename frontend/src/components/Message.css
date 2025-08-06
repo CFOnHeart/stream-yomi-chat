@@ -29,6 +29,8 @@
   border-radius: 18px;
   font-size: 14px;
   line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .message.user .message-content {
@@ -40,6 +42,47 @@
   background: white;
   color: #333;
   border: 1px solid #e1e5e9;
+}
+
+/* 为 bot 消息中的 Markdown 渲染器调整样式 */
+.message.bot .message-content .markdown-renderer {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* 确保 Markdown 内容在消息气泡中正确显示 */
+.message.bot .message-content .markdown-renderer .markdown-h1,
+.message.bot .message-content .markdown-renderer .markdown-h2,
+.message.bot .message-content .markdown-renderer .markdown-h3,
+.message.bot .message-content .markdown-renderer .markdown-h4,
+.message.bot .message-content .markdown-renderer .markdown-h5,
+.message.bot .message-content .markdown-renderer .markdown-h6 {
+  margin-top: 0.8em;
+  margin-bottom: 0.5em;
+}
+
+.message.bot .message-content .markdown-renderer .markdown-h1:first-child,
+.message.bot .message-content .markdown-renderer .markdown-h2:first-child,
+.message.bot .message-content .markdown-renderer .markdown-h3:first-child {
+  margin-top: 0;
+}
+
+/* 调整列表在消息中的间距 */
+.message.bot .message-content .markdown-renderer .markdown-list {
+  margin: 0.5em 0;
+}
+
+/* 调整段落在消息中的间距 */
+.message.bot .message-content .markdown-renderer .markdown-paragraph {
+  margin: 0.5em 0;
+}
+
+.message.bot .message-content .markdown-renderer .markdown-paragraph:first-child {
+  margin-top: 0;
+}
+
+.message.bot .message-content .markdown-renderer .markdown-paragraph:last-child {
+  margin-bottom: 0;
 }
 
 .event-message {

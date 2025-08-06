@@ -1,0 +1,277 @@
+/* Markdown渲染器样式 */
+.markdown-renderer {
+  line-height: 1.6;
+  color: #333;
+}
+
+/* 标题样式 */
+.markdown-h1 {
+  font-size: 1.8em;
+  font-weight: 600;
+  margin: 1.2em 0 0.8em 0;
+  color: #2c3e50;
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 0.3em;
+}
+
+.markdown-h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 1em 0 0.6em 0;
+  color: #34495e;
+  border-bottom: 1px solid #e1e4e8;
+  padding-bottom: 0.2em;
+}
+
+.markdown-h3 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 0.8em 0 0.5em 0;
+  color: #34495e;
+}
+
+.markdown-h4 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.7em 0 0.4em 0;
+  color: #34495e;
+}
+
+.markdown-h5 {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0.6em 0 0.4em 0;
+  color: #34495e;
+}
+
+.markdown-h6 {
+  font-size: 0.9em;
+  font-weight: 600;
+  margin: 0.5em 0 0.3em 0;
+  color: #6c757d;
+}
+
+/* 段落样式 */
+.markdown-paragraph {
+  margin: 0.8em 0;
+  line-height: 1.6;
+}
+
+/* 列表样式 */
+.markdown-list {
+  margin: 0.8em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-list li {
+  margin: 0.3em 0;
+  line-height: 1.5;
+}
+
+.markdown-list-ordered {
+  list-style-type: decimal;
+}
+
+/* 嵌套列表样式 */
+.markdown-list .markdown-list {
+  margin: 0.2em 0;
+}
+
+/* 链接样式 */
+.markdown-link {
+  color: #3498db;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.markdown-link:hover {
+  color: #2980b9;
+  border-bottom-color: #2980b9;
+}
+
+/* 代码样式 */
+.inline-code {
+  background-color: #f8f9fa;
+  color: #e83e8c;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.85em;
+  border: 1px solid #e1e4e8;
+}
+
+/* 代码块样式 */
+.markdown-renderer pre {
+  background-color: #f8f9fa;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  padding: 1em;
+  margin: 1em 0;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.markdown-renderer pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* 引用块样式 */
+.markdown-blockquote {
+  border-left: 4px solid #3498db;
+  background-color: #f8f9fa;
+  margin: 1em 0;
+  padding: 0.8em 1.2em;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.markdown-blockquote p {
+  margin: 0;
+}
+
+/* 表格样式 */
+.table-container {
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 0.9em;
+}
+
+.markdown-table th,
+.markdown-table td {
+  border: 1px solid #e1e4e8;
+  padding: 0.6em 1em;
+  text-align: left;
+}
+
+.markdown-table th {
+  background-color: #f6f8fa;
+  font-weight: 600;
+  color: #24292e;
+}
+
+.markdown-table tr:nth-child(even) {
+  background-color: #f8f9fa;
+}
+
+.markdown-table tr:hover {
+  background-color: #f1f3f4;
+}
+
+/* 分隔线样式 */
+.markdown-renderer hr {
+  border: none;
+  height: 1px;
+  background-color: #e1e4e8;
+  margin: 2em 0;
+}
+
+/* 强调文本样式 */
+.markdown-renderer strong {
+  font-weight: 600;
+  color: #24292e;
+}
+
+.markdown-renderer em {
+  font-style: italic;
+  color: #586069;
+}
+
+/* 删除线样式 */
+.markdown-renderer del {
+  text-decoration: line-through;
+  color: #6c757d;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .markdown-renderer {
+    font-size: 0.9em;
+  }
+  
+  .markdown-h1 {
+    font-size: 1.6em;
+  }
+  
+  .markdown-h2 {
+    font-size: 1.4em;
+  }
+  
+  .markdown-h3 {
+    font-size: 1.2em;
+  }
+  
+  .table-container {
+    font-size: 0.8em;
+  }
+  
+  .markdown-list {
+    padding-left: 1.2em;
+  }
+}
+
+/* 暗色主题支持 */
+@media (prefers-color-scheme: dark) {
+  .markdown-renderer {
+    color: #e1e4e8;
+  }
+  
+  .markdown-h1,
+  .markdown-h2,
+  .markdown-h3,
+  .markdown-h4,
+  .markdown-h5 {
+    color: #f0f3f6;
+  }
+  
+  .markdown-h6 {
+    color: #8b949e;
+  }
+  
+  .inline-code {
+    background-color: #161b22;
+    color: #f85149;
+    border-color: #30363d;
+  }
+  
+  .markdown-renderer pre {
+    background-color: #161b22;
+    border-color: #30363d;
+  }
+  
+  .markdown-blockquote {
+    background-color: #0d1117;
+    border-left-color: #58a6ff;
+    color: #8b949e;
+  }
+  
+  .markdown-table th {
+    background-color: #161b22;
+    color: #f0f3f6;
+  }
+  
+  .markdown-table th,
+  .markdown-table td {
+    border-color: #30363d;
+  }
+  
+  .markdown-table tr:nth-child(even) {
+    background-color: #0d1117;
+  }
+  
+  .markdown-table tr:hover {
+    background-color: #161b22;
+  }
+}
