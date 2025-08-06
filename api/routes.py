@@ -11,7 +11,7 @@ import json
 import asyncio
 from pathlib import Path
 
-from agent.builder import ConversationAgent
+from agent.agent_factory import AgentFactory
 from utils.logger import setup_logger
 
 # Setup logging
@@ -36,7 +36,7 @@ app.add_middleware(
 # Initialize the conversation agent
 config_path = Path("agent/config/llm_config.yaml")
 logger.info(f"Initializing agent with config: {config_path}")
-agent = ConversationAgent(str(config_path))
+agent = AgentFactory.create_agent('conversation', str(config_path))
 logger.info("Agent initialized successfully in API routes")
 
 
