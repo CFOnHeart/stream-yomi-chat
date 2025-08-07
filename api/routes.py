@@ -15,7 +15,7 @@ from agent.agent_factory import AgentFactory
 from utils.logger import setup_logger
 
 # Setup logging
-logger = setup_logger(__name__)
+logger = setup_logger(__name__, "DEBUG")  # 明确设置为DEBUG级别
 
 # Initialize FastAPI app
 app = FastAPI(

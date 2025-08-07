@@ -80,6 +80,18 @@ class ModelLoader:
         else:
             raise ValueError(f"Unsupported embedding provider: {provider}")
     
+    def get_tool_config(self, tool_name: str) -> Dict[str, Any]:
+        """Get configuration for a specific tool."""
+        tools_config = self.config.get('tools', {})
+        tool_config = tools_config.get(tool_name, {})
+        
+        if not tool_config:
+            logger.warning(f"No configuration found for tool: {tool_name}")
+        else:
+            logger.info(f"Loaded configuration for tool: {tool_name}")
+        
+        return tool_config
+    
     def _load_azure_llm(self, config: Dict[str, Any]) -> AzureChatOpenAI:
         """Load Azure OpenAI LLM."""
         return AzureChatOpenAI(

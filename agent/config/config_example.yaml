@@ -9,3 +9,8 @@ embedding:
   provider: openai
   model: text-embedding-ada-002
   api_key: YOUR_OPENAI_API_KEY_HERE  # Replace with your actual API key
+
+tools:
+  web_search:
+    provider: zhipu  # zhipu big model search
+    api_key: YOUR_ZHIPU_API_KEY_HERE  # Replace with your actual ZhiPu API key

@@ -8,6 +8,7 @@ from typing import Dict, Any, List, AsyncGenerator, Optional
 from uuid import uuid4
 
 from langchain.schema import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import ToolMessage
 from langchain.schema.language_model import BaseLanguageModel
 from langchain.tools import BaseTool
 from langgraph.graph import StateGraph, END
@@ -18,20 +19,21 @@ from agent.models.loader import ModelLoader
 from agent.memory import MemoryManager
 from agent.confirmation.manager import ToolConfirmationManager
 from database.chat_history_database import get_database
-from utils.logger import get_logger
+from utils.logger import setup_logger
 
-logger = get_logger(__name__)
+logger = setup_logger(__name__, "DEBUG")  # 明确设置为DEBUG级别并初始化
 
 
 class BaseAgent(ABC):
     """Base class for all agents with shared functionality."""
     
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, streaming_config: Dict[str, Any] = None):
         """
         Initialize the base agent.
         
         Args:
             config_path: Path to configuration file
+            streaming_config: Configuration for streaming behavior
         """
         self.config_path = config_path
         self.model_loader = ModelLoader(config_path)
@@ -43,6 +45,9 @@ class BaseAgent(ABC):
         
         # Initialize tool confirmation manager
         self.confirmation_manager = ToolConfirmationManager(default_timeout=15)
+        
+        # Streaming configuration
+        self.streaming_config = streaming_config or self._get_default_streaming_config()
         
         # These will be set by subclasses
         self.tools = []
@@ -56,6 +61,16 @@ class BaseAgent(ABC):
         logger.info(f"{self.__class__.__name__} initialized successfully")
         if self.tools:
             logger.info(f"Loaded {len(self.tools)} tools: {[tool.name for tool in self.tools]}")
+    
+    def _get_default_streaming_config(self) -> Dict[str, Any]:
+        """Get default streaming configuration. Can be overridden by subclasses."""
+        return {
+            "require_tool_confirmation": True,  # 是否需要工具确认
+            "auto_execute_tools": False,        # 是否自动执行工具
+            "stream_mode": "values",             # LangGraph stream mode
+            "process_tool_calls": True,          # 是否处理工具调用
+            "deduplicate_events": False          # 是否去重事件
+        }
     
     @abstractmethod
     def _initialize_agent(self):
@@ -180,198 +195,256 @@ class BaseAgent(ABC):
     
     async def _stream_graph_response(self, messages: List[BaseMessage]) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Stream response from the LangGraph with tool confirmation support.
-        This method can be overridden by subclasses for custom streaming behavior.
+        Stream response from the LangGraph with configurable behavior.
+        This method is now generic and configurable via streaming_config.
         """
         try:
-            logger.info(f"Starting LLM streaming with tool confirmation for {len(messages)} messages")
+            logger.info(f"Starting graph streaming for {len(messages)} messages")
             logger.info(f"Available tools: {[tool.name for tool in self.tools]}")
+            logger.info(f"Streaming config: {self.streaming_config}")
             
             current_response = ""
-            content_buffer = ""
-            chunks_received = 0
+            tool_calls_made = []
+            last_processed_event = None if self.streaming_config["deduplicate_events"] else "no_dedup"
             
-            # 工具调用状态跟踪
-            pending_tool_calls = {}
-            tool_calls_detected = False
-            
-            # Stream directly from the LLM
-            async for chunk in self.llm_with_tools.astream(messages):
-                chunks_received += 1
-                logger.debug(f"Chunk #{chunks_received}: {type(chunk)} - {chunk}")
+            # Use graph for streaming processing
+            async for event in self.graph.astream(messages, stream_mode=self.streaming_config["stream_mode"]):
+                logger.debug(f"Graph event: {type(event)} - length: {len(event) if isinstance(event, list) else 'N/A'}")
                 
-                # Handle tool calls first
-                if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                    logger.info(f"Tool calls detected in chunk #{chunks_received}: {chunk.tool_calls}")
-                    tool_calls_detected = True
-                    # 发送缓冲区中的内容
-                    if content_buffer.strip():
-                        yield {
-                            "type": "message",
-                            "content": content_buffer,
-                            "is_complete": False
-                        }
-                        content_buffer = ""
+                # Process message list
+                if isinstance(event, list) and event:
+                    last_message = event[-1]
                     
-                    for tool_call in chunk.tool_calls:
-                        call_id = tool_call.get('id')
-                        call_name = tool_call.get('name', '')
-                        
-                        if call_id and call_name:
-                            tool_info = self._get_tool_info(call_name)
-                            
-                            pending_tool_calls[0] = {
-                                'name': call_name,
-                                'args_str': '',
-                                'id': call_id,
-                                'description': tool_info.get('description', ''),
-                                'args_schema': tool_info.get('args_schema', {})
-                            }
-                            
-                            yield {
-                                "type": "tool_detected",
-                                "name": call_name,
-                                "args": {},
-                                "id": call_id,
-                                "description": tool_info.get('description', ''),
-                                "args_schema": tool_info.get('args_schema', {})
-                            }
-                
-                # Handle tool call chunks (参数构建)
-                if hasattr(chunk, 'tool_call_chunks') and chunk.tool_call_chunks:
-                    for tool_chunk in chunk.tool_call_chunks:
-                        index = tool_chunk.get('index', 0)
-                        args_part = tool_chunk.get('args', '')
-                        
-                        if index in pending_tool_calls and args_part:
-                            pending_tool_calls[index]['args_str'] += args_part
-                
-                # Handle content streaming (常规消息内容)
-                if hasattr(chunk, 'content') and chunk.content:
-                    content = str(chunk.content)
-                    current_response += content
-                    content_buffer += content
-                    logger.debug(f"Content chunk: '{content}'")
+                    # Skip duplicate events if configured
+                    if self.streaming_config["deduplicate_events"] and last_processed_event == event:
+                        continue
+                    last_processed_event = event
                     
-                    # 立即发送内容
-                    if content_buffer.strip():
-                        yield {
-                            "type": "message",
-                            "content": content_buffer,
-                            "is_complete": False
-                        }
-                        content_buffer = ""
+                    # Process AI message content
+                    if hasattr(last_message, 'content') and last_message.content:
+                        content = str(last_message.content)
+                        if content and content != current_response:
+                            # Stream new content
+                            new_content = content[len(current_response):] if current_response in content else content
+                            current_response = content
+                            
+                            if new_content.strip():
+                                logger.debug(f"Streaming content: {new_content[:100]}...")
+                                yield {
+                                    "type": "message",
+                                    "content": new_content,
+                                    "is_complete": False
+                                }
+                    
+                    # Process tool calls based on configuration
+                    if (self.streaming_config["process_tool_calls"] and 
+                        hasattr(last_message, 'tool_calls') and last_message.tool_calls):
+                        
+                        async for tool_event in self._process_tool_calls(last_message.tool_calls, messages):
+                            yield tool_event
+                            if tool_event["type"] == "tool_call":
+                                tool_calls_made.append(tool_event)
+                    
+                    # Process tool result messages
+                    if isinstance(last_message, ToolMessage):
+                        async for result_event in self._process_tool_result(last_message, tool_calls_made):
+                            yield result_event
             
-            # 处理完成后的工具调用确认流程
-            if pending_tool_calls and tool_calls_detected:
-                logger.info(f"Processing {len(pending_tool_calls)} tool calls for confirmation")
-                for index, tool_data in pending_tool_calls.items():
-                    try:
-                        # 解析完整的参数
-                        import json
-                        args_dict = json.loads(tool_data['args_str']) if tool_data['args_str'] else {}
-                        logger.info(f"Tool call parsed: {tool_data['name']} with args: {args_dict}")
-                        
-                        # 获取session_id
-                        session_id = None
-                        for msg in messages:
-                            if hasattr(msg, 'additional_kwargs') and 'session_id' in msg.additional_kwargs:
-                                session_id = msg.additional_kwargs['session_id']
-                                break
-                        if not session_id:
-                            session_id = 'default'
-                        
-                        # 发送工具确认请求事件
-                        confirmation_event = {
-                            "type": "tool_confirmation_required",
-                            "tool_name": tool_data['name'],
-                            "args": args_dict,
-                            "description": tool_data['description'],
-                            "args_schema": tool_data['args_schema'],
-                            "session_id": session_id
-                        }
-                        yield confirmation_event
-                        
-                        # 等待用户确认
-                        confirmed, updated_args, error_msg = await self.confirmation_manager.request_confirmation(
-                            session_id=session_id,
-                            tool_name=tool_data['name'],
-                            tool_args=args_dict,
-                            tool_description=tool_data['description'],
-                            tool_schema=tool_data['args_schema']
-                        )
-                        
-                        if error_msg:
-                            yield {
-                                "type": "tool_confirmation_timeout", 
-                                "message": error_msg
-                            }
-                            continue
-                        
-                        if not confirmed:
-                            yield {
-                                "type": "tool_confirmation_rejected",
-                                "message": f"用户取消了工具 {tool_data['name']} 的执行"
-                            }
-                            continue
-                        
-                        # 执行工具
-                        call_data = {
-                            'name': tool_data['name'],
-                            'args': updated_args,
-                            'id': tool_data['id']
-                        }
-                        
-                        yield {
-                            "type": "tool_execution_start",
-                            "tool_name": tool_data['name'],
-                            "args": updated_args
-                        }
-                        
-                        tool_result = await self._execute_tool(call_data)
-                        
-                        yield {
-                            "type": "tool_result",
-                            "tool_name": tool_data['name'],
-                            "result": str(tool_result),
-                            "args": updated_args,
-                            "description": tool_data.get('description', ''),
-                            "args_schema": tool_data.get('args_schema', {})
-                        }
-                        
-                    except Exception as tool_error:
-                        logger.error(f"Tool confirmation/execution error: {tool_error}")
-                        yield {
-                            "type": "tool_error",
-                            "tool_name": tool_data['name'],
-                            "error": str(tool_error)
-                        }
-            
-            # 发送剩余的缓冲内容
-            if content_buffer.strip():
-                yield {
-                    "type": "message",
-                    "content": content_buffer,
-                    "is_complete": False
-                }
-            
-            # 如果有任何响应内容，标记完成
-            if current_response or not tool_calls_detected:
+            # Mark completion
+            if current_response:
                 yield {
                     "type": "message", 
                     "content": "",
                     "is_complete": True
                 }
                         
-            logger.info(f"LLM streaming completed. Total response length: {len(current_response)}")
+            logger.info(f"Graph streaming completed. Total response length: {len(current_response)}")
             
         except Exception as e:
-            logger.error(f"Error in LLM streaming: {e}")
+            logger.error(f"Error in graph streaming: {e}")
             error_msg = f"Sorry, I encountered an error: {str(e)}"
             yield {
                 "type": "message",
                 "content": error_msg,
                 "is_complete": True
+            }
+    
+    async def _process_tool_calls(self, tool_calls: List[Dict], messages: List[BaseMessage]) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Process tool calls based on streaming configuration.
+        Can be overridden by subclasses for custom behavior.
+        """
+        for tool_call in tool_calls:
+            call_name = tool_call.get('name', '')
+            call_args = tool_call.get('args', {})
+            call_id = tool_call.get('id', '')
+            
+            logger.info(f"Tool call detected: {call_name} with args: {call_args}")
+            
+            tool_info = self._get_tool_info(call_name)
+            
+            # Always yield tool detection event
+            yield {
+                "type": "tool_detected",
+                "name": call_name,
+                "args": call_args,
+                "id": call_id,
+                "description": tool_info.get('description', ''),
+                "args_schema": tool_info.get('args_schema', {})
+            }
+            
+            # Handle tool execution based on configuration
+            if self.streaming_config["auto_execute_tools"]:
+                # Auto-execute without confirmation
+                yield {
+                    "type": "tool_execution_start",
+                    "tool_name": call_name,
+                    "args": call_args
+                }
+                
+                try:
+                    tool_result = await self._execute_tool({
+                        'name': call_name,
+                        'args': call_args,
+                        'id': call_id
+                    })
+                    
+                    yield {
+                        "type": "tool_result",
+                        "tool_name": call_name,
+                        "result": str(tool_result),
+                        "args": call_args,
+                        "description": tool_info.get('description', ''),
+                        "args_schema": tool_info.get('args_schema', {})
+                    }
+                    
+                    yield {
+                        "type": "tool_call",
+                        "name": call_name,
+                        "args": call_args,
+                        "result": str(tool_result),
+                        "id": call_id
+                    }
+                    
+                except Exception as tool_error:
+                    logger.error(f"Tool execution error: {tool_error}")
+                    yield {
+                        "type": "tool_error",
+                        "tool_name": call_name,
+                        "error": str(tool_error)
+                    }
+                    
+            elif self.streaming_config["require_tool_confirmation"]:
+                # Use confirmation workflow
+                async for confirmation_event in self._handle_tool_confirmation(tool_call, tool_info, messages):
+                    yield confirmation_event
+    
+    async def _process_tool_result(self, tool_message: ToolMessage, tool_calls_made: List[Dict]) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Process tool result messages. Can be overridden by subclasses.
+        """
+        logger.info(f"Tool result message received: {tool_message.content[:100]}...")
+        
+        # Find the corresponding tool call and update result
+        for tool_call in tool_calls_made:
+            if tool_call.get("result") == "executing...":
+                tool_call["result"] = str(tool_message.content)
+                
+                yield {
+                    "type": "tool_result",
+                    "tool_name": tool_call["name"],
+                    "result": str(tool_message.content),
+                    "args": tool_call["args"],
+                    "description": "",
+                    "args_schema": {}
+                }
+                break
+    
+    async def _handle_tool_confirmation(self, tool_call: Dict, tool_info: Dict, messages: List[BaseMessage]) -> AsyncGenerator[Dict[str, Any], None]:
+        """Handle tool confirmation workflow."""
+        call_name = tool_call.get('name', '')
+        call_args = tool_call.get('args', {})
+        call_id = tool_call.get('id', '')
+        
+        # Get session_id
+        session_id = None
+        for msg in messages:
+            if hasattr(msg, 'additional_kwargs') and 'session_id' in msg.additional_kwargs:
+                session_id = msg.additional_kwargs['session_id']
+                break
+        if not session_id:
+            session_id = 'default'
+        
+        # Send tool confirmation request
+        yield {
+            "type": "tool_confirmation_required",
+            "tool_name": call_name,
+            "args": call_args,
+            "description": tool_info.get('description', ''),
+            "args_schema": tool_info.get('args_schema', {}),
+            "session_id": session_id
+        }
+        
+        # Wait for user confirmation
+        confirmed, updated_args, error_msg = await self.confirmation_manager.request_confirmation(
+            session_id=session_id,
+            tool_name=call_name,
+            tool_args=call_args,
+            tool_description=tool_info.get('description', ''),
+            tool_schema=tool_info.get('args_schema', {})
+        )
+        
+        if error_msg:
+            yield {
+                "type": "tool_confirmation_timeout", 
+                "message": error_msg
+            }
+            return
+        
+        if not confirmed:
+            yield {
+                "type": "tool_confirmation_rejected",
+                "message": f"用户取消了工具 {call_name} 的执行"
+            }
+            return
+        
+        # Execute tool
+        yield {
+            "type": "tool_execution_start",
+            "tool_name": call_name,
+            "args": updated_args
+        }
+        
+        try:
+            tool_result = await self._execute_tool({
+                'name': call_name,
+                'args': updated_args,
+                'id': call_id
+            })
+            
+            yield {
+                "type": "tool_result",
+                "tool_name": call_name,
+                "result": str(tool_result),
+                "args": updated_args,
+                "description": tool_info.get('description', ''),
+                "args_schema": tool_info.get('args_schema', {})
+            }
+            
+            yield {
+                "type": "tool_call",
+                "name": call_name,
+                "args": updated_args,
+                "result": str(tool_result),
+                "id": call_id
+            }
+            
+        except Exception as tool_error:
+            logger.error(f"Tool execution error: {tool_error}")
+            yield {
+                "type": "tool_error",
+                "tool_name": call_name,
+                "error": str(tool_error)
             }
     
     async def _execute_tool(self, tool_call: Dict[str, Any]) -> str:

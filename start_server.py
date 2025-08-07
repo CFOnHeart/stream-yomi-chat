@@ -54,12 +54,20 @@ def main():
     # Import and run
     try:
         import uvicorn
+        import logging.config
+        from uvicorn_log_config import LOGGING_CONFIG
+        
+        # 应用自定义日志配置
+        logging.config.dictConfig(LOGGING_CONFIG)
+        
         uvicorn.run(
             "api.routes:app",
             host="0.0.0.0",
             port=8000,
             reload=True,
-            log_level="info"
+            log_config=LOGGING_CONFIG,  # 使用自定义日志配置
+            access_log=True,
+            use_colors=True
         )
     except KeyboardInterrupt:
         print("\n👋 Server stopped!")
